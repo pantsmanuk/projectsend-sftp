@@ -59,6 +59,9 @@ try {
         && str_contains($workflowHttp($staff, 'GET', '/sftp/transfers')->getContent(), $webInput['_request_id']),
         'Staff HTTP-to-queue-to-SFTP delivery publishes 0644 with confirmed progress, own history, exact bytes and one audit entry');
     $app->instance('env', 'testing');
+    $webTransfer = Transfer::findOrFail($webInput['_request_id']);
+    sourceCheck(! is_dir($sshPath.'/incoming/.projectsend-'.$webTransfer->attempt_id.'.upload'),
+        'A committed completed transfer removes its successful attempt directory');
     $realFile = $newFile(['original_name' => 'queued-local.dump', 'download_limit' => 1]);
     $attempt = $submit->submit($staff, $realFile->id, $sftpTarget->id);
     $rawJob = DB::table('jobs')->where('queue', 'sftp')->first()->payload;
@@ -95,6 +98,7 @@ try {
         && file_get_contents($objectAttempt->fresh()->remote_path) === $payload && $objectFile->downloads()->count() === 1,
         'Queued execution composes the real S3/Flysystem source adapter with SFTP without a local backup copy');
 
+    require __DIR__.'/cleanup-queued-sftp.php';
     require __DIR__.'/windows-queued-sftp.php';
 
     // The audit insert and completed state must roll back together if either
@@ -109,6 +113,7 @@ try {
     $runNext();
     sourceCheck($accounting->fresh()->status === TransferStatus::Uncertain && $accountingFile->downloads()->count() === 0
         && file_get_contents($sshPath.'/incoming/accounting-failure.dump') === $payload
+        && is_file($sshPath.'/incoming/.projectsend-'.$accounting->fresh()->attempt_id.'.upload/writer/ready')
         && ! str_contains($accounting->fresh()->error, 'secret'), 'Accounting failure rolls back the download log and retains an uncertain publication');
 
     $mismatchFile = $newFile(['original_name' => 'changed-bytes.dump', 'path' => 'backups/changed-bytes.dump']);

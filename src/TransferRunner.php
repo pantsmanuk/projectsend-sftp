@@ -11,6 +11,7 @@ use App\Modules\Files\Access\StaffLibraryScope;
 use App\Modules\Files\Models\File;
 use App\Modules\Identity\Permissions\PermissionChecker;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
 use Illuminate\Database\Eloquent\Builder;
 use Throwable;
@@ -25,8 +26,9 @@ final class TransferRunner
         app()->forgetInstance(StaffLibraryScope::class);
         $transfer = DB::transaction(function () use ($id, $allowRetry): ?Transfer {
             $row = Transfer::query()->lockForUpdate()->find($id);
-            if ($row === null || $row->status === TransferStatus::Completed
-                || ($row->status === TransferStatus::Failed && ! $allowRetry)
+            if ($row === null) { return null; }
+            if ($row->status === TransferStatus::Completed) { return $row; }
+            if (($row->status === TransferStatus::Failed && ! $allowRetry)
                 || ($row->lease_expires_at !== null && $row->lease_expires_at->isFuture())) {
                 return null;
             }
@@ -39,6 +41,10 @@ final class TransferRunner
             return $row;
         });
         if ($transfer === null) { return; }
+        if ($transfer->status === TransferStatus::Completed) {
+            DB::afterCommit(fn () => $this->cleanup($transfer->id));
+            return;
+        }
         $token = $transfer->execution_token;
         $enteredTransport = $transfer->attempt_id !== null;
         $guard = fn () => $this->heartbeat($id, $token);
@@ -152,6 +158,31 @@ final class TransferRunner
                 'status' => TransferStatus::Completed, 'bytes_sent' => $current->total_bytes, 'remote_path' => $path,
                 'finished_at' => now(), 'error' => null, 'execution_token' => null, 'lease_expires_at' => null,
             ])->save();
+            // Retain receipts until the outermost completion/accounting commit.
+            // Cleanup never changes the already committed delivery outcome.
+            DB::afterCommit(fn () => $this->cleanup($current->id));
         });
+    }
+
+    private function cleanup(string $id): void
+    {
+        try {
+            $transfer = Transfer::query()->findOrFail($id);
+            if ($transfer->status !== TransferStatus::Completed || $transfer->attempt_id === null) { return; }
+            $destination = Destination::query()->findOrFail($transfer->destination_id);
+            if ($transfer->remote_identity !== $destination->remoteIdentity()) {
+                throw new SftpTransferException('The destination endpoint has changed.');
+            }
+            $this->transport->cleanupCompleted($destination, $transfer->attempt_id, $transfer->filename,
+                $transfer->total_bytes, $transfer->sha256);
+        } catch (Throwable) {
+            // Only the reference is safe to log; never include backend errors,
+            // credentials, paths, or an exception with a sensitive chain.
+            try {
+                Log::warning('Completed SFTP transfer staging cleanup could not finish.', ['transfer_id' => $id]);
+            } catch (Throwable) {
+                // Logging failure must not escape an after-commit callback.
+            }
+        }
     }
 }

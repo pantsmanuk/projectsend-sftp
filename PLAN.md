@@ -69,6 +69,8 @@ fixtures, output, or documentation.
   A transport error alone does not prove the final file is absent. Phase 7 uses
   renewable execution leases plus retained remote barriers and publication/
   non-publication receipts. Never remove barriers while an old worker could
-  resume. Live rollout and representative backup trials remain phase 9.
+  resume. Successful attempt metadata is removed only after completion and
+  accounting commit; earlier abandoned-attempt barriers remain protected.
+  Live rollout and representative backup trials remain phase 9.
 - In phase 2, prevent credential leakage through model serialisation, validation
   input flashing, logs, and queues. Encrypted storage alone does not cover these.

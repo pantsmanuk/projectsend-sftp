@@ -14,10 +14,93 @@ server-managed ACL setting while retaining strict Unix defaults. Deploying that
 update and verifying actual Windows ACLs, delivery, and database-service reads
 remain operator acceptance steps.
 The user confirmed manual acceptance of phase 3, including destination deletion.
-The package is at `packages/projectsend-sftp`, ready to move into a separate
-private repository. Host source, Composer files, caches, and `.env` are unchanged.
+The package is at `packages/projectsend-sftp`, with its own Git repository and
+GitHub origin `https://github.com/pantsmanuk/projectsend-sftp.git`. The owner has
+confirmed deployment as a Git checkout and completed transfers to both Windows
+targets. The completed-transfer cleanup follow-up below is implemented locally;
+its verification and deployment requirements are recorded below. Host source, Composer files, caches, and `.env`
+are unchanged.
 
 ## Verification
+
+### Completed-transfer staging cleanup (2026-10-23)
+
+The owner requested deletion of the successful temporary folder ahead of v1.0.0.
+The new queued-SFTP assertion reproduced the previous retention behavior before
+implementation: delivery completed but its `.projectsend-ATTEMPT_UUID.upload`
+directory remained. Output: `/tmp/projectsend-cleanup-before.log` (expected
+exit 1). No production data or remote server was used.
+
+`TransferRunner::complete` now registers cleanup with Laravel `DB::afterCommit`,
+so both normal publication and reconciliation retain their receipts until the
+outermost completion/accounting transaction commits. Cleanup reloads the record,
+requires Completed and a known attempt UUID, and compares current destination
+identity with the recorded endpoint before connecting. It does not require fresh
+requester/source eligibility or an enabled destination, because it never sends
+another backup. It never mutates the completed row, timestamps, error or accounting.
+Failures produce a fixed warning with only the transfer UUID; even a logging
+failure cannot escape the after-commit callback.
+
+`SftpTransport::cleanupCompleted` verifies the manifest and entire known directory
+shape before using non-recursive deletes/rmdirs. It handles the ordinary writer
+receipt and the fenced/sealed successful-publication layout. A remaining payload,
+unknown file, mismatched identity/receipt, or symlink refuses cleanup without
+recursively sweeping content. The manifest is deleted last; empty directories
+and an already-absent root are valid resumable cleanup states. No final backup
+path is read or modified. The successful attempt's root can be removed because
+publication and accounting are durable; earlier abandoned-attempt barriers must
+remain, even after a newer UUID completes, to fence stale workers.
+
+An explicitly targeted `sftp:recover TRANSFER_UUID` now queues cleanup for an
+already-completed record, including successful folders retained by older
+releases. `--retry` cannot re-upload a completed record. Duplicate completed jobs
+also only attempt cleanup. Untargeted recovery scans still skip completed history.
+No new schema, queue payload fields, command, setting, frontend or dependency.
+Deploy with dedicated workers gracefully stopped and restart them afterward.
+The owner has separately confirmed successful Windows delivery, production Git
+checkout replacement, and manual SQL-backup-folder junction setup on both Windows
+targets; this cleanup update has not been deployed or tested on those servers.
+
+Focused verification from the package directory:
+
+- `php tests/host.php ../.. --sftp`: passed. Covers actual staff HTTP-to-queue
+  completion cleanup, outermost-commit timing, refusal of unexpected content,
+  changed-endpoint refusal before connecting, unchanged Completed rows and
+  accounting, disabled-destination cleanup, explicit cleanup retries, Windows
+  partial-rmdir failure and successful retry, retention of receipts after
+  accounting rollback, cleanup of reconciled publication, retained earlier
+  fencing barriers, and existing duplicate/stale/hard-killed worker tests.
+  Output: `/tmp/projectsend-cleanup-host-sftp.log`.
+- `php tests/sftp.php ../../vendor/autoload.php`: passed. Covers successful
+  recovered-attempt metadata removal without touching the final empty backup,
+  symlink/root/child refusals, retained-payload and mismatched-manifest refusal,
+  entire-shape validation before deletion, resumed empty-root cleanup,
+  idempotence, plus existing transport, Windows-permission, collision, receipt,
+  checksum and real-disconnect checks. Output: `/tmp/projectsend-cleanup-sftp.log`.
+- `php tests/host.php ../..`: passed, including routine-scan exclusion of
+  completed history, explicit completed UUID cleanup dispatch, legacy completed
+  records without guessable paths, host boot/gates, credential exclusion and
+  source/workflow/queue regressions. Output: `/tmp/projectsend-cleanup-host.log`.
+- `php tests/run.php ../../vendor/autoload.php`: passed package discovery,
+  decorated-console boot, destination/credentials/validation and migrations.
+  Output: `/tmp/projectsend-cleanup-package.log`.
+- `php tests/http.php ../../vendor/autoload.php`: passed configuration form,
+  credential exclusion, CSRF, authorisation and deletion regressions.
+  Output: `/tmp/projectsend-cleanup-http.log`.
+- `rg --files src tests database/migrations -g '*.php' -0 | xargs -0 -n1 php -l`:
+  passed all 42 PHP files. Output: `/tmp/projectsend-cleanup-syntax.log`.
+- `python3 -c "from pathlib import Path; compile(Path('tests/sftp-permissions-server.py').read_text(), 'tests/sftp-permissions-server.py', 'exec')"`:
+  passed the updated relay's syntax. `git diff --check`: passed.
+- `composer validate --strict --no-check-publish`: passed.
+  Output: `/tmp/projectsend-cleanup-composer.log`.
+
+No browser or large-data rerun: UI and backup streaming are unchanged. All new
+network checks use generated keys, synthetic data, SQLite and loopback SSH.
+Native Windows ACL/sharing-lock behavior and deployment remain operator checks.
+The owner reviewed the documented change list and authorised committing and
+pushing this follow-up. Use `git log -1` for its commit and `git status -sb` for
+tracking state. No release/tag, host source/configuration, real database, remote
+server, credential, or existing backup was changed.
 
 ### Initial repository commit preparation (2026-10-23)
 
@@ -365,16 +448,16 @@ a separate fixture with a synthetic identity. No frontend rebuild is required.
 
 ## Next task
 
-Deploy the Windows ACL compatibility update with dedicated SFTP workers stopped,
-apply the new destination-policy migration, restrict and verify Windows incoming
-and child ACLs, then enable **Windows ACLs managed on server** for that destination
-and restart the workers. Use `sftp:recover TRANSFER_UUID --retry` for the retained
-chmod failure. Verify original filename publication, exact size/hash, one delivery
-accounting entry, and SQL Server `RESTORE HEADERONLY` access. Complete Windows
-interruption/no-overwrite acceptance and remaining DEPLOYMENT.md checks. Automated
-checks here remain fixture-only. Do not deploy to production automatically.
-Record live results and acceptance separately; the local measurements below do
-not establish production throughput or a maximum supported backup size.
+Deploy the completed-transfer cleanup update with dedicated SFTP workers stopped,
+then restart the workers. No migrations, credential/settings changes, or frontend
+build are needed for this follow-up. Verify a newly Completed transfer removes
+its successful attempt directory on Linux and Windows, preserving the final
+backup and one accounting entry. Use `sftp:recover TRANSFER_UUID` to retry a
+completed record's leftover cleanup if needed; it never re-uploads that record.
+Do not sweep older abandoned-attempt barriers. After deployment acceptance,
+prepare the requested v1.0.0 release. Automated checks remain fixture-only.
+Production deployment and native Windows ACL/sharing-lock acceptance are
+operator-run. Do not deploy or create a release tag automatically.
 
 Staff recovery remains administrator-operated through `sftp:recover`; phase 8
 adds no staff web retry. Configuration requires `edit_settings`; all eligible

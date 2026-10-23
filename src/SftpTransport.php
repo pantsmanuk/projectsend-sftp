@@ -292,6 +292,80 @@ final class SftpTransport
         }
     }
 
+    /**
+     * Remove only the successful attempt's known metadata. The caller must have
+     * committed Completed and its accounting before calling. Never sweep older
+     * fenced attempts: their writers may still resume after this delivery.
+     */
+    public function cleanupCompleted(Destination $destination, string $attemptId, string $filename, int $bytes, string $sha256): void
+    {
+        $manifest = $this->manifest($attemptId, $filename, $bytes, $sha256);
+        $directory = rtrim($destination->directory, '/') ?: '/';
+        $name = '.projectsend-'.$attemptId.'.upload';
+        $root = rtrim($directory, '/').'/'.$name;
+        $sftp = null;
+        try {
+            $sftp = $this->authenticate($destination);
+            $parent = $this->entries($sftp, $directory);
+            if (! isset($parent[$name])) { return; } // Already removed.
+            if (($parent[$name]['type'] ?? null) !== 2) {
+                throw new SftpTransferException('The completed attempt is not a regular directory.');
+            }
+            $entries = $this->entries($sftp, $root);
+            if (array_diff(array_keys($entries), ['manifest', 'writer', 'sealed']) !== []) {
+                throw new SftpTransferException('The completed attempt contains unrecognised objects.');
+            }
+            // Delete the manifest last. Its absence is safe only in an empty
+            // directory left after a previously interrupted cleanup.
+            if ($entries !== [] && (! isset($entries['manifest'])
+                || ! $this->matches($sftp, $root.'/manifest', $entries['manifest'], $manifest))) {
+                throw new SftpTransferException('The completed attempt identity could not be verified.');
+            }
+            $files = [];
+            $directories = [];
+            foreach (['writer', 'sealed'] as $child) {
+                if (! isset($entries[$child])) { continue; }
+                $path = $root.'/'.$child;
+                if ($child === 'writer' && ($entries[$child]['type'] ?? null) === 1
+                    && $this->matches($sftp, $path, $entries[$child], 'ProjectSend fenced '.$attemptId)) {
+                    $files[] = $path;
+                    continue;
+                }
+                if (($entries[$child]['type'] ?? null) !== 2) {
+                    throw new SftpTransferException('The completed attempt contains an unexpected object.');
+                }
+                $contents = $this->entries($sftp, $path);
+                if (array_diff(array_keys($contents), ['ready']) !== []
+                    || (isset($contents['ready']) && ! $this->matches($sftp, $path.'/ready', $contents['ready'], $manifest))) {
+                    throw new SftpTransferException('The completed attempt still contains a payload or unrecognised objects.');
+                }
+                if (isset($contents['ready'])) { $files[] = $path.'/ready'; }
+                $directories[] = $path;
+            }
+            // Validate the entire shape before deleting anything. Non-recursive
+            // operations leave unexpected files and symlinks alone.
+            foreach ($files as $path) {
+                if (! $sftp->delete($path, false)) {
+                    throw new SftpTransferException('Could not remove a completed attempt receipt.');
+                }
+            }
+            foreach ($directories as $path) {
+                if (! $sftp->rmdir($path)) {
+                    throw new SftpTransferException('Could not remove a completed attempt directory.');
+                }
+            }
+            if ((isset($entries['manifest']) && ! $sftp->delete($root.'/manifest', false)) || ! $sftp->rmdir($root)) {
+                throw new SftpTransferException('Could not finish completed attempt cleanup.');
+            }
+        } catch (SftpTransferException $exception) {
+            throw $exception;
+        } catch (Throwable) {
+            throw new SftpTransferException('Completed attempt cleanup could not finish.');
+        } finally {
+            try { $sftp?->disconnect(); } catch (Throwable) {}
+        }
+    }
+
     private function setPermissions(SFTP $sftp, Destination $destination, string $path, int $mode): bool
     {
         // SFTP v3 cannot inspect NTFS ACLs. This explicit administrator setting

@@ -31,7 +31,8 @@ if ($accounting->fresh()->status !== TransferStatus::Completed) {
     throw new RuntimeException('Publication recovery failed: '.$accounting->fresh()->error);
 }
 sourceCheck($accounting->fresh()->status === TransferStatus::Completed && $accountingFile->downloads()->count() === 1
-    && $accounting->fresh()->attempt_id === $publishedId,
+    && $accounting->fresh()->attempt_id === $publishedId
+    && ! file_exists($sshPath.'/incoming/.projectsend-'.$publishedId.'.upload'),
     'Recovery accounts an already published backup once despite later requester/file/destination ineligibility');
 $staff->update(['active' => true]);
 $sftpTarget->update(['enabled' => true]);

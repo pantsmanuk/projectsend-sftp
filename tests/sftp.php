@@ -156,6 +156,12 @@ try {
     file_put_contents($fixturePath.'/incoming/.projectsend-'.$zeroAttempt.'.upload/sealed/ready', 'corrupted receipt');
     $expectFailure(fn () => $transport->reconcile($destination, $zeroAttempt, 'managed-empty.dump', 0, hash('sha256', ''), $guard),
         'Corrupt publication receipts remain unresolved rather than permitting a retry');
+    $completedRoot = $fixturePath.'/incoming/.projectsend-'.$zeroAttempt.'.upload';
+    file_put_contents($completedRoot.'/sealed/ready', file_get_contents($completedRoot.'/manifest'));
+    $transport->cleanupCompleted($destination, $zeroAttempt, 'managed-empty.dump', 0, hash('sha256', ''));
+    clearstatcache();
+    sftpCheck(! file_exists($completedRoot) && is_file($managed['path']),
+        'Completed cleanup removes a recovered publication receipt and fence without touching the final empty backup');
 
     $raceAttempt = (string) Illuminate\Support\Str::uuid();
     $managedRacePath = $fixturePath.'/incoming/managed-race.dump';
@@ -169,6 +175,7 @@ try {
     sftpCheck(is_file($fixturePath.'/incoming/.projectsend-'.$raceAttempt.'.upload/unpublished')
         && file_get_contents($managedRacePath) === $payload, 'A permanent non-publication receipt preserves the collision outcome');
 
+    require __DIR__.'/cleanup-sftp.php';
     require __DIR__.'/windows-sftp.php';
 
     $large = str_repeat('interruption fixture ', 200000);

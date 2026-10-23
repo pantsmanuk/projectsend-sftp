@@ -47,6 +47,8 @@ php -l src/TransferRunner.php
 php -l src/RecoverTransfers.php
 php -l tests/transfers.php
 php -l tests/queued-sftp.php
+php -l tests/cleanup-queued-sftp.php
+php -l tests/cleanup-sftp.php
 php -l tests/sftp-fixture.php
 php -l tests/windows-sftp.php
 php -l tests/windows-queued-sftp.php
@@ -324,7 +326,9 @@ publication as delivered. The fixture independently checks remote bytes/hash.
 
 Failures return fixed credential-safe exceptions without an underlying exception
 chain. Unmanaged transport calls remove staging when the connection permits. Queued
-calls retain recovery evidence and let reconciliation remove abandoned payloads.
+calls retain recovery evidence until publication and accounting commit, then
+remove their successful attempt metadata. Unconfirmed attempts retain evidence
+and let reconciliation remove abandoned payloads.
 A crash or lost connection can leave hidden staging artifacts. A lost rename
 acknowledgement can leave a complete final file even though the call failed.
 The transport never removes a final file or blindly retries an uncertain result.
@@ -437,8 +441,10 @@ php artisan sftp:recover TRANSFER_UUID
 ```
 
 The command queues work on `sftp`; it performs no SFTP work in the command
-process. A worker must be listening. Completed transfers and active leases are
-skipped. Omit the UUID to scan queued, uncertain, and expired running records,
+process. A worker must be listening. Active leases are skipped. An explicitly
+selected completed transfer receives staging cleanup only; it is never uploaded
+or accounted again, even with `--retry`. Omit the UUID to scan queued, uncertain,
+and expired running records, excluding completed history,
 including committed records whose dispatch was lost. A newly queued transfer
 that never started runs its original authorised upload; an existing attempt is
 reconciled first. No scheduler is registered.
@@ -485,12 +491,31 @@ unresolved. Final files are never deleted or overwritten.
 
 If the attempt did not publish, recovery records a permanent non-publication
 receipt before removing its known isolated partial payload. That receipt prevents
-a later inspection from mistaking cleanup for a successful rename. Small private manifests, receipts, and barrier directories remain on
-the destination. **Do not sweep these markers while any old worker could still
-resume.** Removing the original reserved names would remove the protection
-against a stale worker. Retained markers contain no backup bytes or credentials.
-This is the safety tradeoff for recovery using standard SFTP operations without
-installing an agent on the database server.
+a later inspection from mistaking cleanup for a successful rename. These earlier
+abandoned attempts retain small manifests, receipts, and barrier directories,
+even if a newer attempt eventually completes. **Do not sweep those barriers
+while any old worker could still resume.** Removing the original reserved names
+would remove the protection against a stale worker. Retained markers contain no
+backup bytes or credentials.
+
+After completion and accounting commit, the worker removes the successful
+attempt's own `.projectsend-ATTEMPT_UUID.upload` directory. This also applies to
+an already-published attempt completed through reconciliation. Cleanup validates
+the manifest and the entire directory shape before deleting only known metadata;
+it never recursively removes unknown files, staged payloads, or symlinks, and
+never reads, deletes, or overwrites the published backup. Earlier abandoned
+attempt barriers are not part of that cleanup.
+
+Cleanup is best effort and runs after the outermost database commit. Connection,
+permission, sharing-lock or inspection failures leave delivery Completed with
+its accounting unchanged. A credential-safe warning contains only the transfer
+reference. If the worker exits after committing or cleanup stops partway through,
+use `php artisan sftp:recover TRANSFER_UUID` for that completed record to retry
+cleanup on the dedicated queue. It also cleans successful attempt folders left
+by earlier releases when their recorded identity is available. Repeating cleanup
+converges to an absent directory without recreating it or sending another backup.
+There is no automatic history sweep. A changed/deleted destination or missing
+legacy attempt identity cannot be guessed at safely.
 
 Reconciliation accounts for a proven delivery even if the requester/file was
 later deleted or disabled or its allowance is now spent: those bytes were

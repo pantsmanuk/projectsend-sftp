@@ -303,6 +303,24 @@ upload a fresh copy unless `--retry` is explicitly supplied. Inspect the result
 before permitting that retry. Never use `queue:retry`, edit transfer status,
 delete queue rows, sweep `.projectsend-*.upload`, or remove a final file as a
 shortcut. An uncertain outcome is not proof that no file was delivered.
+For a Completed transfer, the successful attempt folder is removed after the
+completion/accounting commit. Cleanup failure does not change delivery status
+or accounting. Inspect credential-safe cleanup warnings and retry leftover
+successful-attempt metadata with the same explicitly targeted
+`php artisan sftp:recover TRANSFER_UUID`. It performs cleanup only for completed
+records, even with `--retry`; routine scans without a UUID exclude completed
+history. Interrupted cleanup can be retried without another upload. Original
+endpoint identity must still match; cleanup never guesses a replacement path.
+Earlier abandoned-attempt barriers remain protected, including after a later
+attempt completes. Do not manually sweep them.
+
+Deploy this cleanup update with workers gracefully stopped, then restart them.
+No migration, configuration change, dependency install or frontend build is
+required. Verify a new completed transfer removes its successful attempt folder
+on both Linux and Windows, and that a forced cleanup refusal leaves Completed
+status, the final backup, and one accounting entry intact. Windows ACLs must
+allow deletion of the upload account's metadata directories.
+
 See [Recover or retry transfers](README.md#recover-or-retry-transfers).
 
 ## Stop or roll back

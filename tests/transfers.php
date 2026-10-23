@@ -160,6 +160,28 @@ $app->make('queue')->connection('database')->push(new TransferBackup($running->i
 $runNext();
 sourceCheck($running->fresh()->status === TransferStatus::Uncertain, 'Legacy in-flight attempts without remote identity are never guessed at or retried');
 
+$legacyCompleted = $running->replicate();
+$legacyCompleted->forceFill([
+    'id' => (string) Illuminate\Support\Str::uuid(), 'status' => TransferStatus::Completed,
+    'attempt_id' => null, 'execution_token' => null, 'lease_expires_at' => null,
+])->save();
+DB::beginTransaction();
+try {
+    Illuminate\Support\Facades\Artisan::call('sftp:recover');
+    $ids = DB::table('jobs')->where('queue', 'sftp')->get()->map(
+        fn ($job) => unserialize(json_decode($job->payload, true)['data']['command'])->transferId,
+    )->all();
+    sourceCheck(! in_array($legacyCompleted->id, $ids, true), 'Routine recovery scans exclude completed history');
+} finally {
+    DB::rollBack();
+}
+$savedCompleted = $legacyCompleted->fresh()->getRawOriginal();
+sourceCheck(Illuminate\Support\Facades\Artisan::call('sftp:recover', ['transfer' => $legacyCompleted->id]) === 0
+    && DB::table('jobs')->where('queue', 'sftp')->count() === 1, 'An explicit completed UUID can request staging cleanup');
+$runNext();
+sourceCheck($legacyCompleted->fresh()->getRawOriginal() === $savedCompleted,
+    'Legacy completed records without an attempt identity are left unchanged without guessing remote paths');
+
 $rejectEnqueue = true;
 Illuminate\Support\Facades\Event::listen(Illuminate\Queue\Events\JobQueueing::class, function () use (&$rejectEnqueue): void {
     if ($rejectEnqueue) { $rejectEnqueue = false; throw new RuntimeException('fixture-only secret broker detail'); }

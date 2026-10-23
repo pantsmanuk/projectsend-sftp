@@ -56,9 +56,11 @@ use ProjectSendSftp\TransferStatus;
             && $done->bytes_sent === strlen($payload) && file_get_contents($done->remote_path) === $payload
             && is_file($path.'/incoming/.projectsend-'.$oldAttempt.'.upload/writer')
             && ! file_exists($path.'/incoming/.projectsend-'.$oldAttempt.'.upload/sealed/payload.part')
+            && ! file_exists($path.'/incoming/.projectsend-'.$done->attempt_id.'.upload')
             && file_get_contents($path.'/chmod-requests.log') === '',
             'Windows policy change safely recovers the old attempt, restarts upload, publishes exact bytes, and accounts once without chmod');
         Artisan::call('sftp:recover', ['transfer' => $transfer->id, '--retry' => true]);
+        $runNext();
         sourceCheck(DB::table('jobs')->where('queue', 'sftp')->count() === 0 && $file->downloads()->count() === 1,
             'Completed Windows delivery cannot be retried or accounted twice');
 
@@ -71,6 +73,7 @@ use ProjectSendSftp\TransferStatus;
                 'file_id' => $webFile->id, 'destination_id' => $target->id];
             sourceCheck($workflowHttp($staff, 'POST', '/sftp/transfers', $input)->getStatusCode() === 303,
                 'Staff HTTP review submits a Windows ACL destination to the dedicated queue');
+            touch($path.'/deny-cleanup-rmdir');
             $runNext();
             $status = $workflowHttp($staff, 'GET', '/sftp/transfers/'.$input['_request_id'].'/status', [], ['HTTP_ACCEPT' => 'application/json']);
             sourceCheck(json_decode($status->getContent(), true)['data']['status'] === 'completed'
@@ -78,6 +81,18 @@ use ProjectSendSftp\TransferStatus;
                 && file_get_contents($path.'/incoming/windows-web.dump') === $payload
                 && $webFile->downloads()->count() === 1 && file_get_contents($path.'/chmod-requests.log') === '',
                 'Staff HTTP-to-queue-to-SFTP Windows ACL delivery completes with exact bytes, status, and one accounting entry');
+            $done = Transfer::findOrFail($input['_request_id']);
+            $root = $path.'/incoming/.projectsend-'.$done->attempt_id.'.upload';
+            $saved = $done->getRawOriginal();
+            sourceCheck($done->error === null && is_dir($root.'/writer') && ! file_exists($root.'/writer/ready')
+                && is_file($root.'/manifest'), 'Windows rmdir failure leaves a completed delivery and resumable partial cleanup');
+            unlink($path.'/deny-cleanup-rmdir');
+            Artisan::call('sftp:recover', ['transfer' => $done->id]);
+            $runNext();
+            clearstatcache();
+            sourceCheck(! file_exists($root) && $done->fresh()->getRawOriginal() === $saved
+                && $webFile->downloads()->count() === 1 && file_get_contents($done->remote_path) === $payload,
+                'Explicit completed recovery resumes Windows cleanup without uploading or accounting again');
         } finally {
             $app->instance('env', 'testing');
         }

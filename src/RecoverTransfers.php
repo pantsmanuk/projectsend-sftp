@@ -14,7 +14,7 @@ final class RecoverTransfers extends Command
     protected $signature = 'sftp:recover {transfer? : A transfer UUID; omit to scan eligible records}
         {--retry : Permit a new upload after the previous attempt is proved unpublished}';
 
-    protected $description = 'Queue reconciliation of stalled SFTP transfers, optionally allowing safe retries';
+    protected $description = 'Queue SFTP recovery or completed-transfer staging cleanup, optionally allowing safe retries';
 
     public function handle(): int
     {
@@ -25,8 +25,10 @@ final class RecoverTransfers extends Command
         }
         try {
             TransferBackup::requireAsyncQueue();
-            $query = Transfer::query()->where('status', '!=', TransferStatus::Completed)
-                ->where(fn ($q) => $q->whereNull('lease_expires_at')->orWhere('lease_expires_at', '<=', now()));
+            $query = Transfer::query()->where(fn ($q) => $q->whereNull('lease_expires_at')->orWhere('lease_expires_at', '<=', now()));
+            // An explicit completed UUID retries cleanup only. Routine scans
+            // must not repeatedly reconnect for every historical delivery.
+            if ($id === null) { $query->where('status', '!=', TransferStatus::Completed); }
             if (! $this->option('retry')) { $query->where('status', '!=', TransferStatus::Failed); }
             if ($id !== null) { $query->whereKey($id); }
             $count = 0;
@@ -36,7 +38,7 @@ final class RecoverTransfers extends Command
                     $count++;
                 }
             });
-            $this->info("Queued {$count} recovery job(s). Active leases and completed transfers were skipped.");
+            $this->info("Queued {$count} recovery/cleanup job(s). Active leases were skipped; completed transfers only receive cleanup when explicitly selected.");
             return self::SUCCESS;
         } catch (Throwable) {
             $this->error('Recovery could not be queued. Check the database and asynchronous queue connection.');

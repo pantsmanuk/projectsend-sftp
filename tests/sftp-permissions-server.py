@@ -61,6 +61,10 @@ try:
                     sys.stdout.buffer.write(status(request, 4))
                     sys.stdout.buffer.flush()
                     continue
+                if key.data == 'client' and request[0] == 15 and (fixture / 'deny-cleanup-rmdir').exists():
+                    sys.stdout.buffer.write(status(request, 3))
+                    sys.stdout.buffer.flush()
+                    continue
                 output = server.stdin if key.data == 'client' else sys.stdout.buffer
                 wire = memoryview(packet(request))
                 while wire:
