@@ -1,0 +1,1 @@
+<p class="help transfer-duration" data-transfer-duration data-seconds="{{ $row['elapsed_seconds'] }}"><span data-duration-label>{{ $row['elapsed_label'] }}</span> <span data-duration-value>{{ $row['elapsed_text'] }}</span></p>

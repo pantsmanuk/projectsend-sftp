@@ -1,0 +1,14 @@
+@extends('sftp::layout')
+@section('title', __('Backup transfer'))
+@section('module-name', __('SFTP transfers'))
+@section('breadcrumbs')<a href="{{ route('sftp.transfers.index') }}">{{ __('My transfers') }}</a><span aria-hidden="true">/</span><span aria-current="page">{{ __('Backup transfer') }}</span>@endsection
+@section('content')
+    <div class="page-heading"><div><h1>{{ __('Backup transfer') }}</h1><p class="muted">{{ __('Check the delivery status of your backup.') }}</p></div><a class="button secondary" href="{{ route('sftp.transfers.show', $row['id']) }}">{{ __('Refresh status') }}</a></div>
+    <section class="panel form-section" data-transfer-status data-url="{{ route('sftp.transfers.status', $row['id']) }}" data-state="{{ $row['status'] }}"
+        data-paused="{{ __('Live updates paused. Refresh status to try again.') }}" data-session="{{ __('Your session or access has changed. Refresh this page to continue.') }}" data-updated="{{ __('Status updated.') }}">
+        <div class="section-heading"><h2>{{ __('Delivery status') }}</h2><div aria-live="polite" aria-atomic="true"><p><span class="badge {{ $row['status'] === 'completed' ? 'enabled' : '' }}" data-status-label>{{ $row['label'] }}</span></p><p class="muted" data-status-message>{{ $row['message'] }}</p></div></div>
+        <div class="fields"><label class="progress-label" for="transfer-progress">{{ __('Backup bytes sent') }}</label><progress id="transfer-progress" max="100" value="{{ $row['percent'] }}" aria-valuetext="{{ $row['progress_text'] }}">{{ $row['percent'] }}%</progress><p class="help"><span data-progress-text>{{ $row['progress_text'] }}</span> · <span data-progress-percent>{{ $row['percent'] }}%</span></p>@include('sftp::transfers.duration')<div class="refresh-state"><p class="help" role="status" data-refresh-message>{{ in_array($row['status'], ['queued', 'running']) ? __('Updates automatically while this transfer is active.') : __('Refresh to check for an update.') }}</p></div></div>
+    </section>
+    <section class="panel form-section"><div class="section-heading"><h2>{{ __('Transfer details') }}</h2><p class="muted">{{ __('Keep the reference below if you need help with this transfer.') }}</p></div><dl class="transfer-details"><dt>{{ __('Backup') }}</dt><dd>{{ $row['file_name'] }}</dd><dt>{{ __('Filename') }}</dt><dd><code>{{ $row['filename'] }}</code></dd><dt>{{ __('Size') }}</dt><dd>{{ $row['size'] }}</dd><dt>{{ __('Destination') }}</dt><dd>{{ $row['destination_name'] }}</dd><dt>{{ __('Requested') }}</dt><dd><time datetime="{{ $row['created_at'] }}">{{ $row['created_label'] }}</time></dd><dt>{{ __('Reference') }}</dt><dd><code>{{ $row['id'] }}</code></dd></dl></section>
+    <div class="actions"><a class="button secondary" href="{{ route('sftp.transfers.index') }}">{{ __('Back to my transfers') }}</a></div>
+@endsection

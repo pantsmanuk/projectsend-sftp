@@ -1,0 +1,28 @@
+{
+    "profile": "product-admin",
+    "sourceRoots": [
+        "resources/views"
+    ],
+    "locale": "en-GB",
+    "canonicalMap": "DESIGN.md",
+    "requiredCapabilities": [
+        "Form",
+        "Scrollbar",
+        "Toast",
+        "CRUD",
+        "Select/Listbox"
+    ],
+    "ownership": {
+        "Form": "resources/views/field.blade.php",
+        "Scrollbar": "resources/views/styles.blade.php",
+        "Toast": "resources/views/layout.blade.php",
+        "CRUD": "src/DestinationController.php",
+        "Select/Listbox": "native"
+    },
+    "evidence": {
+        "crudFullFlow": "tests/http.php",
+        "failurePaths": "tests/http.php",
+        "staffWorkflow": "tests/workflow.php and tests/workflow-browser.mjs",
+        "endToEndTransfer": "tests/queued-sftp.php"
+    }
+}
