@@ -37,6 +37,27 @@ deployment procedure and generated large-data checks are implemented; live
 deployment and environment-specific acceptance are deferred. See HANDOVER.md
 for measurements and DEPLOYMENT.md for the remaining operational gates.
 
+## UAT follow-up tasks (2026-10-26)
+
+Task 1 is implemented for review. Tasks 2 and 3 remain in the backlog.
+
+1. **Task 1.** Implemented for review: limit My transfers history to the most
+   recent six calendar months, retaining older entries in the database. Apply
+   the cutoff before pagination. Older queued, running, and uncertain transfers
+   remain visible; older completed and failed entries remain accessible through
+   their own detail URLs.
+2. **Task 2.** Add an operator workflow, initially `php artisan sftp:cancel TRANSFER_UUID`,
+   to resolve an unwanted failed attempt by deleting its database record and
+   associated transfer filesystem artifacts. Design safe handling of queue jobs,
+   active/stale workers, uncertain publication, and retained fencing barriers
+   before deleting anything. Cleanup must be retryable after partial failure and
+   must not delete source backups, published backups, unrelated files, or delivery
+   accounting. Refuse unsafe removal and explain the required resolution.
+3. **Task 3.** Remove navigation from transfer pages to destination administration,
+   including for users with `edit_settings`. Keep destination administration
+   accessible through its separate ProjectSend sidebar entry with existing
+   permission checks. Preserve the approved destination picker for transfers.
+
 ## Session boundaries
 
 Read this file and HANDOVER.md first. Implement the requested phase, run focused

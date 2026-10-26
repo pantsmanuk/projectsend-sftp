@@ -23,6 +23,49 @@ are unchanged.
 
 ## Verification
 
+### Task 1: six-month transfer history (2026-10-26)
+
+Implemented on `feat/six-month-transfer-history` for review. PLAN.md now labels
+UAT follow-ups Tasks 1, 2, and 3; only Task 1 is implemented. My transfers filters
+completed/failed requests older than six calendar months before pagination.
+The exact cutoff is included and month subtraction clamps to the target month's
+last valid day. Older queued, running, and uncertain work stays visible. All
+records remain stored and requester-authorised detail/status URLs still work.
+No migration, scheduler, host change, or SFTP operation is required.
+
+Focused verification:
+
+- `php tests/host.php ../..`: passed. New actual-host HTTP checks cover the
+  cutoff at month end, one second before/after it, unresolved states, requester
+  isolation, pagination, empty history, stale pages, retention and detail access.
+  Before the query change this failed on `old-completed`, proving the regression.
+  Logs: `/tmp/projectsend-history-before.log`, `/tmp/projectsend-history-host.log`.
+- `php tests/run.php ../../vendor/autoload.php`: passed.
+  Log: `/tmp/projectsend-history-package.log`.
+- `php tests/http.php ../../vendor/autoload.php`: passed.
+  Log: `/tmp/projectsend-history-http.log`.
+- `php -l src/TransferController.php` and `php -l tests/workflow.php`: passed.
+- `composer validate --strict --no-check-publish`: passed.
+  Log: `/tmp/projectsend-history-composer.log`.
+- `git diff --check`: passed. Reviewed the full diff.
+
+No browser, SFTP or large-data rerun: templates, transport and streaming are
+unchanged. Tests use isolated SQLite and generated fixtures, with no real
+credentials, servers or backups. Tasks 2 and 3 remain pending.
+
+### UAT follow-up backlog (2026-10-26)
+
+Recorded three requested tasks in PLAN.md: six-month UI history visibility with
+database retention, an operator `sftp:cancel TRANSFER_UUID` removal workflow for
+unwanted failed attempts, and removal of destination-administration navigation
+from transfer pages. Cancellation design must preserve worker fencing and safely
+resolve uncertain outcomes before removing transfer artifacts. These are backlog
+items only; no runtime behavior or host integration changed.
+
+Verification: `git diff --check` passed. Reviewed the documentation diff against
+the three requests. Runtime checks were not run for this documentation-only edit.
+Next work is implementation of the follow-up task selected by the owner.
+
 ### Completed-transfer staging cleanup (2026-10-23)
 
 The owner requested deletion of the successful temporary folder ahead of v1.0.0.
