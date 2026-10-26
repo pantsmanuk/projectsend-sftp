@@ -100,6 +100,7 @@ try {
 
     require __DIR__.'/cleanup-queued-sftp.php';
     require __DIR__.'/windows-queued-sftp.php';
+    require __DIR__.'/cancel-sftp.php';
 
     // The audit insert and completed state must roll back together if either
     // cannot be saved after remote publication. Only the result stays uncertain.

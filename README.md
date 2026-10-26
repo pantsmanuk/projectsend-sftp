@@ -45,6 +45,10 @@ php -l src/RequestTransfer.php
 php -l src/TransferBackup.php
 php -l src/TransferRunner.php
 php -l src/RecoverTransfers.php
+php -l src/CancelTransfer.php
+php -l tests/cancel.php
+php -l tests/cancel-sftp.php
+php -l database/migrations/2026_10_26_000000_add_sftp_cancellation_support.php
 php -l tests/transfers.php
 php -l tests/queued-sftp.php
 php -l tests/cleanup-queued-sftp.php
@@ -461,8 +465,9 @@ With `--retry`, failed records are also eligible. Retrying rechecks the original
 requester's current eligibility, source access, availability, allowance, and
 unchanged source identity. A disabled destination refuses new uploads. Each
 retry uses a new remote attempt directory; uploads restart from byte zero.
-There is no cancellation or resume feature. Avoid direct queue replay or manual
-status edits; use recovery so the remote checks always precede a retry.
+There is no resume feature. To remove an unwanted failed attempt, use the
+[operator cancellation workflow](#remove-an-unwanted-failed-transfer). Avoid direct
+queue replay or manual status edits; use recovery so remote checks precede retries.
 
 Before the first SFTP operation, the database stores the attempt UUID and approved
 host, port, account, incoming directory, and host fingerprint. Recovery requires
@@ -530,6 +535,70 @@ Older queued records that never started can use the new protocol. Stop old
 workers and migrate before using the new code; a mixed phase 6/7 worker fleet
 cannot provide the new protocol's guarantees. Rollback of recovery columns must
 also happen only with workers stopped and unresolved work dealt with.
+
+## Remove an unwanted failed transfer
+
+Run this operator command from the installed host application:
+
+```sh
+php artisan sftp:cancel TRANSFER_UUID
+```
+
+Only Failed records can be removed. Never-started failures need no remote
+connection, even if their destination has been deleted. For uncertain or
+interrupted work, run checked recovery first and inspect the resulting status.
+A completed delivery cannot be cancelled or retracted.
+
+If an upload attempt was recorded, stop every SFTP worker and suspend any
+supervisor that would restart it. Verify that all worker processes and their
+remote SSH sessions have terminated, including any paused or disconnected
+worker. `queue:restart` alone does not establish this: an existing job can still
+be running. Wait for any execution lease to expire. Then run:
+
+```sh
+php artisan sftp:cancel TRANSFER_UUID --workers-stopped
+```
+
+The flag is your confirmation of that external prerequisite; the command cannot
+inspect workers on other hosts or prove remote sessions have ended. Removing
+fencing barriers while an old session can resume is unsafe. The command runs
+SFTP cleanup synchronously in the CLI, not on the stopped queue. Resume workers
+after the command finishes and you have inspected its result.
+
+Cancellation verifies the original endpoint and reconciles every recorded
+attempt before removing its known unpublished staging metadata. It never deletes
+source backups, final backups, unrelated objects or delivery accounting. Changed
+endpoints, unknown files, symlinks, publication evidence, and incomplete legacy
+attempt history refuse removal. Restore the original endpoint and working
+credentials before retrying. If publication is detected on a Failed record,
+use `php artisan sftp:recover TRANSFER_UUID --retry` to reconcile it; a proven
+delivery is accounted without another upload. Never edit statuses to force
+cancellation.
+
+Remote cleanup precedes database deletion under the transfer's execution lock.
+A partial cleanup failure retains the record and recorded attempt identities;
+repeat the same command after resolving the failure, with workers still stopped.
+Known attempts already removed can be inspected and cleaned again safely.
+A missing UUID that was already cancelled succeeds; an unknown UUID fails.
+
+The transfer row is deleted, so history, detail and status stop showing it.
+Only its UUID remains in `sftp_cancelled_transfers` to block old form replays.
+Pending broker jobs are not purged or replayed; after restart they find no
+transfer and do nothing, including jobs that allowed a retry. A fresh authorised
+request uses a new UUID and remains possible.
+
+New attempts persist earlier attempt UUIDs before starting another upload. Older
+single-attempt records can be removed when their identity and remote metadata
+are verifiable. Older multi-attempt records with missing identities and legacy
+started records without an attempt UUID require operator investigation. The
+command does not guess directories or offer a force-delete option.
+
+Deploy with workers stopped and apply
+`2026_10_26_000000_add_sftp_cancellation_support` before restarting. Preserve the
+UUID replay guards and attempt history on code rollback. Keep submissions
+disabled on versions that do not enforce cancellation guards. Dropping them can
+revive old requests and loses the identities needed for safe cleanup; retire old
+forms and queued jobs before any separately reviewed schema rollback.
 
 ## Send and track a backup
 

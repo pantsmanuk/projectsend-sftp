@@ -87,6 +87,10 @@ final class TransferRunner
                 $attemptId = (string) Str::uuid();
                 $updated = $this->owned($transfer->id, $token)->update([
                     'attempt_id' => $attemptId, 'attempts' => $transfer->attempts + 1,
+                    'previous_attempt_ids' => json_encode([
+                        ...($transfer->previous_attempt_ids ?? []),
+                        ...($transfer->attempt_id === null ? [] : [$transfer->attempt_id]),
+                    ], JSON_THROW_ON_ERROR),
                     'remote_identity' => json_encode($destination->remoteIdentity(), JSON_THROW_ON_ERROR),
                     'actor_snapshot' => json_encode($transfer->actor_snapshot ?? ['name' => $actor->name, 'type' => $actor->type->value], JSON_THROW_ON_ERROR),
                     'started_at' => $transfer->started_at ?? now(), 'bytes_sent' => 0, 'error' => null,

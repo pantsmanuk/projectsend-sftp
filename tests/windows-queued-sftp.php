@@ -96,6 +96,25 @@ use ProjectSendSftp\TransferStatus;
         } finally {
             $app->instance('env', 'testing');
         }
+        $cancelFile = $newFile(['original_name' => 'windows-cancel.dump', 'path' => 'backups/windows-cancel.dump']);
+        Illuminate\Support\Facades\Storage::disk('sftp_test_local')->put($cancelFile->path, str_repeat('X', strlen($payload)));
+        $cancelRow = $submit->submit($staff, $cancelFile->id, $target->id);
+        $runNext();
+        Artisan::call('sftp:recover', ['transfer' => $cancelRow->id]);
+        $runNext();
+        sourceCheck($cancelRow->fresh()->status === TransferStatus::Failed, 'Windows cancellation fixture is reconciled and unpublished');
+        $cancelRoot = $path.'/incoming/.projectsend-'.$cancelRow->fresh()->attempt_id.'.upload';
+        touch($path.'/deny-cleanup-rmdir');
+        sourceCheck(Artisan::call('sftp:cancel', ['transfer' => $cancelRow->id, '--workers-stopped' => true]) === 1
+            && $cancelRow->fresh() !== null && is_file($cancelRoot.'/manifest') && is_dir($cancelRoot.'/sealed'),
+            'Windows rmdir refusal retains the failed transfer and identity after partial cancellation cleanup');
+        unlink($path.'/deny-cleanup-rmdir');
+        sourceCheck(Artisan::call('sftp:cancel', ['transfer' => $cancelRow->id, '--workers-stopped' => true]) === 0,
+            'Windows cancellation resumes safely after a partial directory-removal failure');
+        clearstatcache();
+        sourceCheck($cancelRow->fresh() === null && ! file_exists($cancelRoot) && $cancelFile->downloads()->count() === 0
+            && file_get_contents($path.'/incoming/windows-web.dump') === $payload,
+            'Windows cancellation removes only the failed attempt while preserving delivered backups and accounting');
     } finally {
         if (is_resource($server)) { proc_terminate($server); proc_close($server); }
     }

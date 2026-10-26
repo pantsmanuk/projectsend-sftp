@@ -194,7 +194,7 @@ reservation policy needs a reviewed connection-selection change first.
    an active upload. Let active jobs finish before switching releases. If one
    is killed, retain its records and remote markers for reconciliation.
 2. Deploy the locked host release and run `php artisan migrate --force` using
-   the host's normal reviewed migration process. All four package migrations
+   the host's normal reviewed migration process. All five package migrations
    must appear as applied. Rebuild host caches with the normal release procedure.
 3. Start the dedicated worker. Verify the process and its queue connection
    directly through the supervisor. Confirm ordinary workers exclude `sftp`.
@@ -314,14 +314,21 @@ endpoint identity must still match; cleanup never guesses a replacement path.
 Earlier abandoned-attempt barriers remain protected, including after a later
 attempt completes. Do not manually sweep them.
 
-Deploy this cleanup update with workers gracefully stopped, then restart them.
-No migration, configuration change, dependency install or frontend build is
-required. Verify a new completed transfer removes its successful attempt folder
+The completed-transfer cleanup itself needs no configuration change, dependency
+install or frontend build. The later failed-transfer cancellation feature adds
+`2026_10_26_000000_add_sftp_cancellation_support`; stop workers and apply it before
+restarting. Preserve its UUID replay guards and attempt history on code rollback.
+Verify a new completed transfer removes its successful attempt folder
 on both Linux and Windows, and that a forced cleanup refusal leaves Completed
 status, the final backup, and one accounting entry intact. Windows ACLs must
 allow deletion of the upload account's metadata directories.
 
 See [Recover or retry transfers](README.md#recover-or-retry-transfers).
+For an unwanted Failed transfer, follow
+[Remove an unwanted failed transfer](README.md#remove-an-unwanted-failed-transfer).
+Remote artifact removal requires all SFTP workers and their SSH sessions to have
+terminated, not just an expired lease. The cancellation command never removes
+published backups or Completed records.
 
 ## Stop or roll back
 
@@ -335,6 +342,11 @@ See [Recover or retry transfers](README.md#recover-or-retry-transfers).
    destroys credentials; transfer rollback destroys pending work and history.
    Schema removal needs a separate reviewed backup and data-retention decision.
    Database rollback never undoes delivered remote files or host audit entries.
+   Keep `sftp_cancelled_transfers` UUID guards and `previous_attempt_ids` when
+   reverting code. Dropping them permits old form replays and loses cleanup
+   identities. Keep submissions disabled on versions that do not enforce the
+   cancellation guards. Retire old forms and queued jobs before a reviewed schema
+   rollback.
 
 The package cannot cancel an active remote transfer or retract a delivered
 backup. Keep all retained recovery markers until operators have proved no old
