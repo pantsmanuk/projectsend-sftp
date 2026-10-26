@@ -11,7 +11,10 @@ and accounting. DESIGN.md maps shared controls to their runtime owners.
 - History, details and status are requester-only, including for administrators.
   Other requesters' direct URLs return 404. No staff web retry is offered.
 - Host sidebar visits use the existing Inertia same-tab location handoff.
-  Package navigation joins My transfers, Send backup, and authorised Destinations.
+  Transfer-page navigation joins My transfers and Send backup only, even for
+  configuration administrators. Destinations navigation appears only on
+  destination-administration pages; administrators enter through the separate
+  ProjectSend sidebar entry. The approved destination picker is unaffected.
 
 ## Destination permissions
 

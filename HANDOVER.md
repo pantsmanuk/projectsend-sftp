@@ -23,6 +23,62 @@ are unchanged.
 
 ## Verification
 
+### Task 3: separate transfer navigation (2026-10-26)
+
+Task 2 was merged as PR #2. Fetched/pruned origin, fast-forwarded local main to
+`fb6cc95`, removed the merged local Task 2 branch, and created
+`feat/separate-transfer-navigation`. Tasks 1 and 2 are merged; Task 3 is
+implemented for review. No host source or configuration changed.
+
+The shared Blade layout now renders Destinations navigation only within
+`sftp.destinations.*` pages, retaining its administration gate. History, file
+selection, review and detail pages show My transfers and Send backup only,
+including for administrators. Destination administration remains reachable
+through its separate authorised ProjectSend sidebar entry or direct URL.
+Approved destination selection is unchanged. Updated README.md, DESIGN.md and
+UX-CONTRACT.md to record that navigation rule. Existing styles, tokens, forms,
+permissions and transfer behavior are unchanged; no migration or build is needed.
+
+Verification:
+
+- `php tests/host.php ../..`: passed. New HTTP checks cover all four transfer
+  pages for staff and configuration administrators, continued approved picker,
+  administrator destination access and the separate host sidebar entry. Existing
+  ordinary-staff destination refusal, user isolation, queue, cancellation and
+  full migration rollback/reapply checks pass. Log:
+  `/tmp/projectsend-nav-host.log`. The added regression failed before the layout
+  fix on the administrator history page; log `/tmp/projectsend-nav-before.log`.
+- `php tests/run.php ../../vendor/autoload.php`: passed. Log:
+  `/tmp/projectsend-nav-package.log`.
+- `php tests/http.php ../../vendor/autoload.php`: passed, including destination
+  forms, permissions, CSRF, secret handling and deletion. Log:
+  `/tmp/projectsend-nav-http.log`.
+- `node tests/workflow-browser.mjs`: passed in headless Firefox, including new
+  administrator navigation absence, separate destination access and keyboard
+  focus checks, plus selection, validation, guarded edits, submission, progress,
+  completion/history, failure/offline/session states and narrow light/dark UI.
+  Log: `/tmp/projectsend-nav-browser.log`. Used the synthetic fixture started
+  with `SFTP_WORKFLOW_DIRECTORY=/tmp/projectsend-task3-preview php -S 127.0.0.1:8766 tests/workflow-preview.php`.
+- `node tests/browser.mjs ../../vendor/autoload.php`: passed destination create,
+  edit, validation, secret handling, Windows ACL control, narrow themes and
+  confirmed deletion using `php -S 127.0.0.1:8765 tests/preview.php`. Log:
+  `/tmp/projectsend-nav-config-browser.log`. Both browser suites used
+  `firefox --headless --no-remote --profile /tmp/projectsend-sftp-browser --remote-debugging-port=9222 about:blank`.
+- `python3 /home/murrayc/.codex/plugins/cache/openai-curated-remote/frontend-design-premium/1.4.0/skills/frontend-design-premium/scripts/audit_project.py . --mode strict`:
+  passed with zero findings. Output: `/tmp/projectsend-nav-audit.json`.
+  DESIGN.md prose was reconciled; token frontmatter and runtime CSS are unchanged.
+- `php -l tests/workflow.php`, `node --check tests/workflow-browser.mjs`,
+  `composer validate --strict --no-check-publish`, and `git diff --check`: passed.
+  Composer log: `/tmp/projectsend-nav-composer.log`.
+
+Inspected the administrator history screenshot and narrow dark staff selection
+and destination sibling screenshots under `/tmp/projectsend-sftp-workflow-*.png`.
+Navigation and focus remain clear. Browser fixtures queue synthetic records only
+and make no SFTP connection. No real credentials, backup, external server or live
+application data was used. No SFTP/large-data rerun because transport and streaming
+are unchanged. No dependency installation, host edit, deployment, tag or release.
+
+
 ### PR #2 review: restore full migration test schema (2026-10-26)
 
 Read CodeRabbit's "Prompt to fix review comments" and verified its one finding

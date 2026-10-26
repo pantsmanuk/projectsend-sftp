@@ -57,8 +57,11 @@ to browser storage.
 ## Layout and shared owners
 
 `layout.blade.php` owns header, same-tab navigation, notifications, and the
-unsaved-change dialog. `field.blade.php` owns labels, hints, errors, and secret
-presence behaviour. `styles.blade.php` owns tokens, focus, scrollbar styling,
+unsaved-change dialog. Transfer pages show only My transfers and Send backup;
+Destinations navigation appears only within destination administration, including
+for administrators. The separate authorised ProjectSend sidebar entry owns
+entry to destination administration. `field.blade.php` owns labels, hints, errors,
+and secret presence behaviour. `styles.blade.php` owns tokens, focus, scrollbar styling,
 responsive form stacking, and horizontally scrollable tables. `field.blade.php`
 also owns the native destination select trigger. Browser/OS ownership of its
 popup, locale, geometry, scrolling, and keyboard behaviour is intentional; no

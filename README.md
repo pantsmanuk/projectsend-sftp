@@ -607,7 +607,10 @@ backup**, search the permitted file library, choose a backup, then review its
 approved destination and select **Send backup**. No backup bytes pass through the
 browser. An asynchronous dedicated SFTP worker is required as described above.
 Configuration remains at `/system/settings/sftp`, restricted to staff with the
-existing `edit_settings` permission.
+existing `edit_settings` permission. Transfer pages offer My transfers and Send
+backup navigation only, including for administrators. Open destination
+administration through its separate **SFTP destinations** ProjectSend sidebar
+entry. Approved destination selection when sending a backup is unchanged.
 
 Delivery status shows an elapsed hours:minutes:seconds timer while execution is
 running, then a fixed duration on completion. My transfers retains completed

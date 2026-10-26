@@ -61,6 +61,16 @@ try {
     ({ context } = await command('browsingContext.create', { type: 'tab' }));
     await command('browsingContext.activate', { context });
     await command('browsingContext.setViewport', { context, viewport: { width: 1280, height: 1000 } });
+    await navigate('/sftp/transfers?preview_role=admin');
+    assert.equal(await evaluate('document.querySelector(".module-nav").textContent.includes("Destinations")'), false);
+    assert.equal(await evaluate('[...document.links].some(link => new URL(link.href).pathname.startsWith("/system/settings/sftp"))'), false);
+    await evaluate('document.querySelector(".module-nav a").focus()');
+    assert.equal(await evaluate('document.activeElement.textContent'), 'My transfers');
+    await screenshot('admin-transfers-navigation');
+    await navigate('/system/settings/sftp');
+    assert.equal(await evaluate('document.querySelector("h1").textContent'), 'SFTP destinations');
+    assert.equal(await evaluate('document.querySelector(".module-nav [aria-current=page]").textContent'), 'Destinations');
+    console.log('PASS: Administrator transfer pages omit destination navigation while separate configuration remains accessible');
     await navigate('/sftp/transfers?preview_role=staff');
     await evaluate('localStorage.setItem("appearance","light")');
     assert.equal(await evaluate('document.querySelector("h1").textContent'), 'My transfers');
