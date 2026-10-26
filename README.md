@@ -1,191 +1,22 @@
 # ProjectSend SFTP transfers
 
-Package for staff-initiated copies of backups from ProjectSend storage
-to approved SFTP destinations. Backups do not pass through staff computers.
-Database restoration stays in the existing operational workflow.
+Copy backups from ProjectSend storage to approved SFTP destinations without
+passing backup data through staff computers. Staff select a file and destination,
+then follow delivery progress and history. Database restoration remains a
+separate operation.
 
-Phases 1–8 provide destination administration, authorised source streams, SFTP
-transport, queued execution with recovery, and staff selection/progress/history
-screens. Phase 9 adds the [deployment and trial procedure](DEPLOYMENT.md) and a
-repeatable generated large-backup trial. Live deployment remains owner-operated.
+Requires PHP 8.4 or later, Laravel 12, and a compatible ProjectSend installation.
+Transfers require an asynchronous queue and a dedicated worker.
 
-The Composer name is `inhouse/projectsend-sftp`. The source repository is
-[pantsmanuk/projectsend-sftp](https://github.com/pantsmanuk/projectsend-sftp)
-and is public. The package uses the [BSD 3-Clause License](LICENSE), copyright
-2026 GGP Systems Limited. Public Composer registry publication and release tags
-are separate owner decisions.
+## Installation
 
-All three UAT follow-ups are merged: six-month history visibility, operator
-removal of unwanted failed attempts, and separate destination-administration
-navigation. Deployment and environment acceptance remain operator-run.
+Follow the [deployment guide](DEPLOYMENT.md) to install the package, apply
+migrations, configure workers, and verify your storage and SFTP servers in
+staging before production use. The guide also covers Windows ACLs and rollback.
+No frontend build or package asset publishing is required.
 
-## Documentation
-
-- [PLAN.md](PLAN.md): delivered scope, merged tasks, and remaining acceptance work.
-- [HANDOVER.md](HANDOVER.md): current state and historical verification evidence.
-- [DEPLOYMENT.md](DEPLOYMENT.md): installation, workers, Windows ACLs, trials and rollback.
-- [UX-CONTRACT.md](UX-CONTRACT.md): staff interaction and access rules.
-- [DESIGN.md](DESIGN.md): visual conventions and shared UI ownership.
-- [AGENTS.md](AGENTS.md): package development instructions.
-
-## Run the package checks
-
-Use PHP 8.4 or later and Laravel 12. From this directory, reuse the current
-ProjectSend installation's dependencies:
-
-```sh
-php tests/run.php ../../vendor/autoload.php
-php tests/host.php ../..
-php tests/host.php ../.. --sftp
-php tests/http.php ../../vendor/autoload.php
-php tests/sftp.php ../../vendor/autoload.php
-php tests/large-backup.php ../.. 256 local
-php tests/large-backup.php ../.. 1024 local
-php tests/large-backup.php ../.. 1024 s3-mock
-composer validate --strict --no-check-publish
-rg --files src tests database/migrations routes -g '*.php' -0 | xargs -0 -n1 php -l
-```
-
-Expected result: package loading, destination storage, access, validation,
-credential protection, migration rollback, navigation, HTTP forms, source streams, and host
-integration checks pass. The HTTP suite exercises the web middleware, including
-real CSRF checks, uploads, forbidden requests, stale forms, and secret handling.
-The standalone harness creates and removes a temporary Laravel application.
-The host check boots the actual ProjectSend providers with an in-memory SQLite
-database and temporary caches and storage. Only isolated test jobs run. Neither test
-loads ProjectSend's `.env`, accesses its database, or changes its caches.
-It runs the real host migrations against its isolated database and checks
-the real file scopes, download limits, and staff picker endpoints. It also tests
-staff review/submission/history through host HTTP middleware, real CSRF checks,
-forged IDs, requester isolation, duplicate submissions and safe progress JSON. Its S3 test
-uses the installed AWS/Flysystem adapter with a mocked AWS command handler;
-no object-store network request is made. Live S3/GCS connectivity is not tested.
-The host check also exercises real database queue dispatch and execution-time
-refusals without a network connection. Add `--sftp` to exercise queued transfers
-from local storage and the mocked S3 adapter to the local SSH server, including
-progress, accounting rollback, changed source bytes, interruption, recovery,
-and concurrent independent PHP workers. It includes a staff HTTP submission
-through to real SFTP delivery, matching bytes and one audit entry. Add `--workers-only` alongside `--sftp`
-to focus on lease takeover, stale-worker resumption, and hard-kill recovery. The `--sftp` fixture uses its own
-temporary SQLite file so those workers can share test state; the ordinary host
-check uses SQLite in memory.
-
-The database harnesses require the SQLite extension. The SFTP tests require
-OpenSSH `sshd`, `ssh-keygen`, and `sftp-server`, an ordinary non-root account,
-and permission to bind a loopback port. Python 3 is also required for the
-Windows-permission protocol relay. It generates temporary host/login keys
-and starts its own unprivileged SSH server on 127.0.0.1. It changes no account
-keys or system SSH configuration and connects to no external server. Its files
-and server are removed on normal exit. Interruption testing can take a minute
-because it exercises a real connection timeout.
-
-Both SFTP suites also exercise explicit Windows ACL policy against a loopback
-relay over real OpenSSH. The relay accepts chmod without changing permission
-bits, or rejects chmod/rename on demand. It reproduces the observed 0600 mode
-mismatch, checks strict Unix failures, publication, recovery fencing, retry,
-collision protection, and HTTP-to-worker accounting. It does not emulate NTFS
-ACLs, Windows sharing locks, or establish live Windows acceptance. See
-[Windows destinations](#windows-destinations) for the server-side checks.
-
-The Phase 9 large-backup commands require temporary space for two full copies
-plus 256 MiB. They run a separate 128 MiB PHP queue worker and report peak memory,
-elapsed time, throughput, exact-byte/hash verification, accounting, and metadata
-HTTP response size. The S3 variant uses a file-backed mock AWS response, without
-object-store network access. See [Run the repeatable large-data check](DEPLOYMENT.md#run-the-repeatable-large-data-check)
-for limits and the separate live-environment acceptance procedure.
-
-To test a separate package checkout without ProjectSend:
-
-```sh
-composer install
-composer test
-```
-
-Laravel is a development dependency for this standalone harness. Runtime
-dependencies include Laravel database, encryption, validation, and support
-components. phpseclib validates SSH private keys and supplies SFTP transport.
-The current host already has these dependencies installed.
-
-## Inspect the screens locally
-
-For staff selection, review, progress and history, start the actual-host fixture
-from this package directory:
-
-```sh
-php -S 127.0.0.1:8766 tests/workflow-preview.php
-```
-
-Open `http://127.0.0.1:8766/sftp/transfers`. It supplies synthetic staff, files
-and a generated-key dummy loopback destination. **Send backup queues a fixture
-record only; this preview runs no worker and makes no SFTP connection.** Browser
-tests simulate progress through a CSRF-protected fixture-only endpoint. Confirmed
-real SFTP delivery is exercised separately by `tests/host.php ../.. --sftp`.
-
-Use `?preview_role=admin` to inspect destination administration, or
-`?preview_role=staff` to return to ordinary staff. `?preview_role=empty` shows a
-staff account without file permission. The choice persists in a fixture cookie.
-State and generated keys live under `/tmp/projectsend-sftp-workflow-preview`,
-separate from existing configuration preview values. Set `SFTP_WORKFLOW_DIRECTORY`
-to a new temporary directory for a fresh workflow session; restarting the server
-does not clear it. Use generated test keys only. Do not deploy this test router.
-It bypasses login for local inspection and must stay bound to loopback.
-
-For destination administration without the full host workflow, start the
-configuration-only fixture:
-
-```sh
-php -S 127.0.0.1:8765 tests/preview.php
-```
-
-Open `http://127.0.0.1:8765/system/settings/sftp`. The preview supplies a synthetic
-administrator and stores test data under `/tmp/projectsend-sftp-preview`.
-Use test SSH keys only. This entry point refuses non-local requests and runs only
-under PHP's development server; do not deploy or expose it as an application.
-Stop the server with Ctrl+C. The real installation is not changed.
-
-For automated browser checks, use Node 22 or later and Firefox. In another
-terminal, create a temporary Firefox profile directory and run:
-
-```sh
-mkdir -p /tmp/projectsend-sftp-browser
-firefox --headless --no-remote --profile /tmp/projectsend-sftp-browser --remote-debugging-port=9222 about:blank
-```
-
-With both PHP preview servers and Firefox running, run:
-
-```sh
-node tests/browser.mjs ../../vendor/autoload.php
-node tests/workflow-browser.mjs
-```
-
-The browser script uses Node's native WebSocket and Firefox WebDriver BiDi.
-It installs no npm dependencies. Run the two browser scripts sequentially.
-The configuration script exercises a generated test key upload,
-create/edit/enable/disable, keyboard access, secret visibility, unsaved changes,
-validation recovery, and narrow light/dark layouts. Screenshots are written to
-`/tmp/projectsend-sftp-*.png`. The workflow script exercises search/clear,
-administrator navigation separation, review validation, native selection,
-submission, simulated progress, uncertain and failed outcomes, session/network
-failure and narrow themes. Its screenshots
-use `/tmp/projectsend-sftp-workflow-*.png`. The platform owns the native select
-popup; headless screenshots may omit that OS window. Stop Firefox after testing.
-For configuration regressions without touching saved preview values, start its
-server with `SFTP_TEST_DIRECTORY=/tmp/projectsend-sftp-config-check`.
-`SFTP_BROWSER_ORIGIN` and `SFTP_WORKFLOW_ORIGIN` can override the scripts' default
-loopback origins if using different ports.
-
-For a manual inspection, check labels, navigation, narrow layout, validation
-errors, and credential replacement. Saving does not connect to a destination.
-
-To remove a destination, open **Edit**, choose **Delete destination**, and review
-the separate confirmation page. **Keep destination** cancels. Confirmed deletion
-removes that destination's database row, including its encrypted private key and
-passphrase. The remote server, its authorised keys, and its files are unaffected.
-Existing database backups and copies of key files are not erased. Disable a
-destination instead if you want to retain its configuration.
-Deletion is refused while the destination has queued, running, or uncertain
-transfers. Completed and failed transfer records retain their destination name
-after configuration deletion; their destination reference becomes null.
+The Composer package is `inhouse/projectsend-sftp`. Source is available at
+[pantsmanuk/projectsend-sftp](https://github.com/pantsmanuk/projectsend-sftp).
 
 ## Install into a development application
 
@@ -217,133 +48,130 @@ guards; see [Stop or roll back](DEPLOYMENT.md#stop-or-roll-back).
 
 After installation, eligible staff see **More → SFTP transfers** in the
 ProjectSend sidebar. Staff with `edit_settings` also see **SFTP destinations**.
-Direct access is `/sftp/transfers` or `/system/settings/sftp`, respectively. The package uses
-Blade pages with bundled inline styles and behaviour; no npm build, published
-assets, or `.env` changes are needed. Inertia navigation performs a full-page
-same-tab handoff, and the package header links back to ProjectSend. Host source
-and the existing Settings submenu are untouched.
+Direct access is `/sftp/transfers` or `/system/settings/sftp`, respectively.
 
-## Staff selection and source access
+## Configure destinations
 
-Destination administration requires `edit_settings`. The separate transfer
-workflow is available to all active, unexpired staff through `sftp.transfer`.
-That eligibility grants no additional ProjectSend file access. Clients and guests
-cannot use the transfer workflow.
+Open **SFTP destinations** in the ProjectSend sidebar.
 
-These authenticated, session-based JSON picker endpoints remain available:
+Creation requires a name, hostname or IP address, username, absolute directory,
+trusted OpenSSH SHA-256 host fingerprint, and SSH private key. The port defaults
+to 22 and destinations start disabled. An optional passphrase unlocks the key.
 
-| Endpoint | Result |
-| --- | --- |
-| `GET /sftp/destinations` | Enabled destination IDs and names only. No hostnames, paths, fingerprints, credential-presence flags, or secrets. |
-| `GET /sftp/files?q=backup&page=1` | Staff-visible, available file metadata, 25 rows per page, newest IDs first. Optional `q` searches display and original filenames. |
+Blank or omitted credential fields preserve the saved pair. A replacement key
+uses its submitted passphrase, or no passphrase when blank or omitted. This
+allows rotation from an encrypted key to an unencrypted key without retaining
+the old passphrase. Invalid keys or mismatched passphrases leave saved data
+unchanged. If another administrator changes the destination while you edit it,
+saving is refused until you review the updated values.
 
-File rows contain `id`, `name`, `original_name`, `size`, `selectable`, and
-`download_allowance`. Pagination metadata contains `current_page`, `last_page`,
-`per_page`, and `total`. Download-limited files remain visible with
-`selectable: false`, matching the host's distinction between seeing a file and
-taking a copy. Pending, quarantined, known-missing, and deleted files are excluded.
-No file bytes, storage paths, disk names, or signed URLs are returned.
+Keys and passphrases are encrypted with the host application's encryption key.
+Preserve that key with database backups. Credentials are excluded from staff
+transfer pages and queue payloads.
 
-`TransferSource::withStream($actor, $fileId, $consume)` is the internal backend
-read boundary. It rechecks transfer eligibility, the current ProjectSend library
-scope, file availability, and download allowance. The callback receives a
-readable stream and the exact selected `File` model. The method closes the
-stream after success or failure. The caller cannot supply a storage path or disk.
-Unexpected missing objects or storage errors fail with a generic source-read
-error rather than exposing backend details. There is no HTTP source-byte route.
+Saving configuration validates it locally. It does not establish connectivity
+or verify the remote server's identity. The transport performs that verification
+when called; never treat a syntactically valid fingerprint as proof that a server
+is trusted.
 
-Selection and source reading do not log a completed download, spend an allowance,
-or open an SFTP connection. The queued job accounts for confirmed delivery and
-rechecks the requester, file, and enabled destination when it executes. Do not
-bind `TransferSource` as a singleton across requests or queue jobs.
+To remove a destination, open **Edit**, choose **Delete destination**, and review
+the separate confirmation page. **Keep destination** cancels. Confirmed deletion
+removes that destination's database row, including its encrypted private key and
+passphrase. The remote server, its authorised keys, and its files are unaffected.
+Existing database backups and copies of key files are not erased. Disable a
+destination instead if you want to retain its configuration.
+Deletion is refused while the destination has queued, running, or uncertain
+transfers. Completed and failed transfer records retain their destination name
+after configuration deletion.
 
-These backends require the actual ProjectSend host file models and services.
-The configuration-only local preview uses a synthetic identity and is not a
-fixture for the file-selection endpoints. Run `php tests/host.php ../..` to
-exercise them against the isolated real-host application.
+## Permissions and file access
 
-## Backend SFTP transport
+Destination administration requires an active, unexpired staff account with
+`edit_settings`. All active, unexpired staff can send transfers, subject to their
+existing ProjectSend file permissions, library restrictions, file availability,
+and download allowance. Clients and guests cannot use transfers.
 
-`SftpTransport::upload($destination, $stream, $filename, $expectedBytes,
-$expectedSha256, $progress = null)` consumes a readable stream from its current
-position. The caller retains ownership of the stream. It returns `path`, `bytes`,
-and `sha256` after successful publication. Progress reports bytes sent, before
-publication, and does not mean a transfer has completed.
+Staff can select only enabled destinations and do not see their connection
+settings or credentials. Pending, quarantined, missing, and deleted files are
+excluded. Files with no remaining download allowance cannot be selected.
 
-The queue worker calls it inside `TransferSource::withStream`, using the
-selected file's byte count and SHA-256 checksum. Missing or invalid checksums
-fail rather than bypass verification. The transport itself performs no database
-writes; the queued job owns progress, completion, and accounting.
+The worker checks access and availability again before uploading. A changed file
+or destination configuration prevents queued work from starting. Disabling a
+destination prevents queued uploads but does not stop an active transfer.
+Confirmed deliveries count toward ProjectSend download limits and activity
+history. Selection and unsuccessful uploads do not consume download allowance.
+Concurrent transfers and browser downloads do not reserve allowance in advance.
 
-The transport verifies the pinned host fingerprint before decrypting login
-credentials or authenticating. It tries the server's offered modern Ed25519,
-ECDSA, or RSA SHA-2 host-key algorithms so a pin can identify any of those keys.
-Legacy SHA-1 RSA signatures and DSA are unsupported. Each network operation has
-a 30-second timeout; deployment still needs a suitable overall worker timeout.
+## Send and track a backup
 
-The incoming directory must already exist and be writable by the SFTP account.
-Filenames must be a single safe path segment of at most 255 bytes. Uploads stream
-into a randomly named private `.projectsend-*.upload` directory. The transport
-checks the source byte count and SHA-256 and the remote file length, sets file
-permissions to 0644, then uses SFTP v3 rename to publish without overwriting.
-The upload account retains write access; database service accounts can read the
-published backup if directory traversal and server access policies permit it.
-Other local accounts with directory access can also read it. Staging directories
-remain 0700. These are the default Linux/Unix rules. An explicitly opted-in
-Windows destination instead relies on server-managed ACLs as described below.
-Existing delivered files are not changed by a package update.
-It never uses the overwriting POSIX rename extension. The destination server
-must honour SFTP v3 no-overwrite semantics. Existing targets, including targets
-created during upload, cause failure. Uploads are not resumed or retried.
+Staff use **SFTP transfers** in navigation, or `/sftp/transfers`. Choose **Send
+backup**, search the permitted file library, choose a backup, then review its
+approved destination and select **Send backup**. No backup bytes pass through the
+browser. An asynchronous dedicated SFTP worker is required.
+Configuration remains at `/system/settings/sftp`, restricted to staff with the
+existing `edit_settings` permission. Transfer pages offer My transfers and Send
+backup navigation only, including for administrators. Open destination
+administration through its separate **SFTP destinations** ProjectSend sidebar
+entry.
 
-Memory use is bounded by stream chunks; no complete backup is buffered or saved
-locally by the transport. SHA-256 verifies the bytes read from the source; SSH
-provides transport integrity. A normal upload does not reread remote disk contents. Recovery streams the
-remote final file to verify its full SHA-256 before recording an uncertain
-publication as delivered. The fixture independently checks remote bytes/hash.
+Delivery status shows an elapsed hours:minutes:seconds timer while execution is
+running, then a fixed duration on completion. My transfers retains completed
+durations. Timing excludes the initial queue wait and includes final checks and
+any retries or reconciliation after the first start. Live timing pauses with
+status updates on errors; Refresh retrieves the current recorded duration.
 
-Failures return fixed credential-safe exceptions without an underlying exception
-chain. Unmanaged transport calls remove staging when the connection permits. Queued
-calls retain recovery evidence until publication and accounting commit, then
-remove their successful attempt metadata. Unconfirmed attempts retain evidence
-and let reconciliation remove abandoned payloads.
-A crash or lost connection can leave hidden staging artifacts. A lost rename
-acknowledgement can leave a complete final file even though the call failed.
-The transport never removes a final file or blindly retries an uncertain result.
-The queued job records uncertain outcomes with automatic retries disabled.
-Recovery reconciles these outcomes before an explicit retry. Laravel automatic
-job retries remain disabled.
+My transfers lists only the current requester's records, including when that
+requester is an administrator. The list shows requests from the last six calendar
+months, including the exact cutoff, plus older queued, running, or uncertain
+transfers that still need attention. Completed and failed requests older than
+the cutoff are hidden from the list before pagination; their database records
+and authorised detail/status URLs remain available. Month-end cutoffs use the
+last valid day of the target month. No scheduled cleanup or database deletion is
+performed.
 
-## Queued execution
+Detail pages show bytes sent, delivery status and
+a reference for support. Pages are not cached. Active status polls every five
+seconds, pauses in hidden tabs, and stops after 180 requests, an error, a session
+change or a terminal state. **Refresh status** always works without JavaScript.
+100% sent is not confirmation; only **Completed** confirms delivery.
 
-`RequestTransfer::submit($actor, $fileId, $destinationId)` is the internal
-submission boundary. It reloads the actor, checks source access and allowance,
-validates the original filename and checksum, and locks the enabled destination
-while creating a transfer. It snapshots source disk/path, size, checksum, and
-filename, plus the destination revision and display names. It stores no copy of
-the destination credentials. A UUID identifies the transfer; each execution that
-may upload gets a separate persisted attempt UUID.
+Failed or unconfirmed transfers require an administrator to use the checked
+[recovery procedure](#recover-or-retry-transfers) before sending again. The staff screens expose no retry
+button. Repeating the same submitted form returns the same transfer without
+queueing again; opening a fresh review creates a new request. Neither flow
+restores a database or replaces an existing remote file.
 
-Dispatch occurs after the database transaction commits. Job payloads contain the
-transfer ID, explicit-retry flag, and queue policy only. An existing asynchronous database, Redis,
-SQS, or Beanstalkd connection is required; sync and null drivers are refused.
-The fixed queue name is `sftp`, with one allowed attempt and a 3600-second job
-timeout. A separate worker must listen to that queue. Queue reservation or
-visibility timeouts must exceed the job timeout; the host's default 90-second
-database `retry_after` is insufficient. No host configuration or `.env` has been
-changed by the package. Follow [Configure the queue and dedicated worker](DEPLOYMENT.md#configure-the-queue-and-dedicated-worker)
-before enabling transfers in an installed application.
+## Delivery and server requirements
 
-The worker first claims a 120-second renewable database lease with a unique
-execution token. Active leases exclude duplicate workers. Progress, completion,
-and failure updates require that token; expired owners cannot renew it. The
-worker clears the host permission and library-scope caches and reloads the
-requester. It checks current account eligibility, file access, scanning state,
-allowance, and enabled destination. Changed source identity or destination
-revision refuses execution. Settings and key edits count as a changed revision.
-An in-flight upload uses the destination values loaded when execution starts;
-disabling a destination prevents queued work, but does not cancel an active
-SSH session.
+The incoming directory must exist and be writable by the SFTP account. The
+server must support SFTP v3 rename without overwriting existing files. A filename
+collision fails the transfer; existing backups are never replaced or deleted.
+
+The package verifies the saved SSH host fingerprint before authentication.
+Ed25519, ECDSA, and RSA SHA-2 host keys are supported. DSA and legacy SHA-1 RSA
+signatures are unsupported. Network operations have a 30-second timeout.
+
+Uploads stream through private staging directories with bounded memory use.
+Source size and SHA-256, plus remote file length, are checked before publication.
+Normal uploads do not reread remote disk contents. Recovery verifies the remote
+file's full SHA-256 before confirming an uncertain delivery.
+
+On Unix servers, staging directories use mode 0700 and published files use 0644.
+The upload account retains write access. Other accounts can read published files
+if directory access permits it. Provision database-service read access on the
+server. For Windows, follow [Windows destinations](#windows-destinations).
+
+Automatic retries and upload resumption are disabled. A lost connection can leave
+a complete remote file without confirmed delivery. Use checked recovery before
+sending again.
+
+## Queue requirements and transfer states
+
+Use an asynchronous database, Redis, SQS, or Beanstalkd connection. Sync and null
+drivers are refused. A dedicated worker must listen on the `sftp` queue. Jobs
+allow one attempt and have a 3600-second timeout. Queue reservation or visibility
+timeouts must exceed that timeout; a database `retry_after` of 90 seconds is
+insufficient. Follow [Configure the queue and dedicated worker](DEPLOYMENT.md#configure-the-queue-and-dedicated-worker).
 
 Transfer states are:
 
@@ -354,20 +182,6 @@ Transfer states are:
 | `completed` | Remote publication was acknowledged and completion plus download accounting committed. |
 | `failed` | Preparation failed, or reconciliation fenced an unpublished attempt and removed its partial payload. Explicit retry still rechecks access. |
 | `uncertain` | Execution or accounting did not confirm completion. Reconciliation is required. A killed process can remain `running` until recovery claims its expired lease. |
-
-Progress is persisted at most once per second, plus the final byte count.
-Confirmed completion and the host's `FileDownloaded` entry commit in the same
-database transaction. The entry explicitly names the requesting staff member
-and includes `delivery: sftp` and the transfer ID. This preserves the host's
-download counts, per-user limits, and uploader exemption without new audit
-actions. Source reads and unconfirmed uploads do not spend allowance. The host's
-existing concurrency race for download limits also applies here; the package
-does not reserve allowance across concurrent transfers or browser downloads.
-
-Internal storage paths, checksums, destination revisions, and remote paths are
-hidden from model JSON. Staff detail/status responses use a separate explicit
-whitelist and enforce requester ownership. Use the workflow preview for staff
-screens; the older configuration preview remains configuration-only.
 
 ## Windows destinations
 
@@ -412,7 +226,7 @@ never started are refused after a configuration change and need a fresh request.
 
 ## Recover or retry transfers
 
-From an installed development application, queue reconciliation for one transfer:
+From the installed application, queue reconciliation for one transfer:
 
 ```sh
 php artisan sftp:recover TRANSFER_UUID
@@ -450,32 +264,16 @@ for recovery against the same endpoint. A changed host/path/fingerprint remains
 unresolved until the original approved endpoint is restored; recovery never
 silently contacts the replacement. No copy of credentials enters history or jobs.
 
-Managed uploads reserve `.projectsend-ATTEMPT_UUID.upload` with a manifest and a
-private `writer` subdirectory. A receipt is written only after source size/hash,
-remote length, and the configured permission policy pass, immediately before
-publishing by rename. For Windows ACL destinations, the administrator's
-server-side ACL provisioning replaces Unix permission enforcement.
-Recovery moves `writer` to `sealed` and permanently occupies the old `writer`
-path with a small regular file. That barrier stops a stale worker's remaining
-writes or rename from publishing, including a worker paused before creation.
-An active handle may still write to an isolated/unlinked payload, but cannot
-publish it at the original path or change the recovered database record.
+Recovery verifies whether the recorded attempt published a complete backup.
+Proven deliveries are marked Completed and counted once. Unpublished attempts
+are prevented from publishing before a retry is allowed. Unexpected files,
+invalid recovery metadata, or failed inspections leave the transfer unresolved.
+Final files are never deleted or overwritten.
 
-A valid receipt plus a missing staged payload proves that this attempt renamed
-its file. Recovery then verifies the final file's size and full SHA-256 and commits
-completion plus one download entry atomically. An unrelated existing file is
-never claimed as this delivery, even if its contents match. Missing/changed
-files, invalid receipts, unexpected objects, and failed inspections remain
-unresolved. Final files are never deleted or overwritten.
-
-If the attempt did not publish, recovery records a permanent non-publication
-receipt before removing its known isolated partial payload. That receipt prevents
-a later inspection from mistaking cleanup for a successful rename. These earlier
-abandoned attempts retain small manifests, receipts, and barrier directories,
-even if a newer attempt eventually completes. **Do not sweep those barriers
-while any old worker could still resume.** Removing the original reserved names
-would remove the protection against a stale worker. Retained markers contain no
-backup bytes or credentials.
+Abandoned attempts can retain small hidden staging directories containing
+recovery metadata. **Do not remove these while an old worker could resume.**
+They prevent stale workers from publishing and contain no backup bytes or
+credentials. Use checked recovery or failed-transfer cancellation for cleanup.
 
 After completion and accounting commit, the worker removes the successful
 attempt's own `.projectsend-ATTEMPT_UUID.upload` directory. This also applies to
@@ -485,7 +283,7 @@ it never recursively removes unknown files, staged payloads, or symlinks, and
 never reads, deletes, or overwrites the published backup. Earlier abandoned
 attempt barriers are not part of that cleanup.
 
-Cleanup is best effort and runs after the outermost database commit. Connection,
+Cleanup runs after delivery is recorded. Connection,
 permission, sharing-lock or inspection failures leave delivery Completed with
 its accounting unchanged. A credential-safe warning contains only the transfer
 reference. If the worker exits after committing or cleanup stops partway through,
@@ -503,12 +301,9 @@ source for that accounting step. New uploads always require fresh access checks.
 A crash during accounting rolls back the log and completed state together, so
 another reconciliation cannot duplicate the entry.
 
-Older phase 6 records that started without remote attempt identity cannot
-be guessed at safely. Recovery leaves them uncertain for operator investigation.
-Older queued records that never started can use the new protocol. Stop old
-workers and migrate before using the new code; a mixed phase 6/7 worker fleet
-cannot provide the new protocol's guarantees. Rollback of recovery columns must
-also happen only with workers stopped and unresolved work dealt with.
+Older records without sufficient attempt identity remain unresolved for operator
+investigation. Stop workers before upgrading or rolling back, and follow the
+[rollback procedure](DEPLOYMENT.md#stop-or-roll-back) for unresolved work.
 
 ## Remove an unwanted failed transfer
 
@@ -574,45 +369,6 @@ disabled on versions that do not enforce cancellation guards. Dropping them can
 revive old requests and loses the identities needed for safe cleanup; retire old
 forms and queued jobs before any separately reviewed schema rollback.
 
-## Send and track a backup
-
-Staff use **SFTP transfers** in navigation, or `/sftp/transfers`. Choose **Send
-backup**, search the permitted file library, choose a backup, then review its
-approved destination and select **Send backup**. No backup bytes pass through the
-browser. An asynchronous dedicated SFTP worker is required as described above.
-Configuration remains at `/system/settings/sftp`, restricted to staff with the
-existing `edit_settings` permission. Transfer pages offer My transfers and Send
-backup navigation only, including for administrators. Open destination
-administration through its separate **SFTP destinations** ProjectSend sidebar
-entry. Approved destination selection when sending a backup is unchanged.
-
-Delivery status shows an elapsed hours:minutes:seconds timer while execution is
-running, then a fixed duration on completion. My transfers retains completed
-durations. Timing excludes the initial queue wait and includes final checks and
-any retries or reconciliation after the first start. Live timing pauses with
-status updates on errors; Refresh retrieves the current recorded duration.
-
-My transfers lists only the current requester's records, including when that
-requester is an administrator. The list shows requests from the last six calendar
-months, including the exact cutoff, plus older queued, running, or uncertain
-transfers that still need attention. Completed and failed requests older than
-the cutoff are hidden from the list before pagination; their database records
-and authorised detail/status URLs remain available. Month-end cutoffs use the
-last valid day of the target month. No scheduled cleanup or database deletion is
-performed.
-
-Detail pages show bytes sent, delivery status and
-a reference for support. Pages are not cached. Active status polls every five
-seconds, pauses in hidden tabs, and stops after 180 requests, an error, a session
-change or a terminal state. **Refresh status** always works without JavaScript.
-100% sent is not confirmation; only **Completed** confirms delivery.
-
-Failed or unconfirmed transfers require an administrator to use the checked
-recovery procedure above before sending again. The staff screens expose no retry
-button. Repeating the same submitted form returns the same transfer without
-queueing again; opening a fresh review creates a new request. Neither flow
-restores a database or replaces an existing remote file.
-
 ## Obtain the trusted host fingerprint
 
 **Trusted host fingerprint** identifies the destination database server's
@@ -652,46 +408,6 @@ verify the reason with the server administrator before replacing the saved value
 Saving configuration validates and stores the fingerprint without connecting.
 The SFTP transport checks it against the remote host key before authentication.
 
-## Destination configuration contract
+## License
 
-`ProjectSendSftp\SaveDestination::save($actor, $input, $destination = null)` is
-the configuration write boundary for destination administration. It checks the
-`sftp.manage-destinations` gate before validating or writing. That gate requires
-an active, unexpired staff account with the existing `edit_settings` permission.
-Use the same gate before listing or displaying configuration.
-
-Creation requires a name, hostname or IP address, username, absolute directory,
-trusted OpenSSH SHA-256 host fingerprint, and SSH private key. The port defaults
-to 22 and destinations start disabled. An optional passphrase unlocks the key.
-Updates accept a subset of these fields. Unknown fields are discarded.
-
-Blank or omitted credential fields preserve the saved pair. A replacement key
-uses its submitted passphrase, or no passphrase when blank or omitted. This
-allows rotation from an encrypted key to an unencrypted key without retaining
-the old passphrase. Invalid keys or mismatched passphrases leave saved data
-unchanged. Updates reload the destination under a database transaction lock so
-stale edits do not overwrite a rotated credential pair.
-The edit form also submits a revision token. A changed destination rejects a
-stale form before writing, and asks the administrator to review their values.
-
-The model encrypts keys and passphrases with the host application's existing
-encryption key. Preserve that key with database backups. Normal model responses
-hide both secrets and expose `has_private_key` and `has_private_key_passphrase`
-flags. The provider prevents credential input flashing and passphrase trimming.
-It emits no credential logs. Transfer queue payloads contain record IDs rather
-than credential values.
-
-Saving configuration validates it locally. It does not establish connectivity
-or verify the remote server's identity. The transport performs that verification
-when called; never treat a syntactically valid fingerprint as proof that a server
-is trusted. Staff eligibility and source access have separate checks above.
-
-Both loading tests exercise Laravel discovery with fixture installed-package
-metadata. They do not perform a Composer installation. The host check boots the
-actual application, its providers, and the real navigation hook. The separate
-HTTP suite and browser preview use a synthetic identity, not a real ProjectSend
-login. Verification results are recorded in [HANDOVER.md](HANDOVER.md).
-
-Keep this directory independently distributable. See [PLAN.md](PLAN.md) for
-scope and remaining acceptance work, and [HANDOVER.md](HANDOVER.md) for current
-state and verification evidence.
+[BSD 3-Clause](LICENSE). Copyright 2026 GGP Systems Limited.

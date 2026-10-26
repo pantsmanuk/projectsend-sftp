@@ -48,6 +48,160 @@ operator-run. No customer data or real servers were used by package tests.
 There are no outstanding UAT development tasks. PLAN.md owns delivered scope and
 remaining operational gates; README.md and DEPLOYMENT.md own current procedures.
 
+## Development checks and local previews
+
+These instructions were moved from README.md to keep the public introduction
+focused on staff and administrators. Run commands from the package directory.
+
+### Run the package checks
+
+Use PHP 8.4 or later and Laravel 12. From this directory, reuse the current
+ProjectSend installation's dependencies:
+
+```sh
+php tests/run.php ../../vendor/autoload.php
+php tests/host.php ../..
+php tests/host.php ../.. --sftp
+php tests/http.php ../../vendor/autoload.php
+php tests/sftp.php ../../vendor/autoload.php
+php tests/large-backup.php ../.. 256 local
+php tests/large-backup.php ../.. 1024 local
+php tests/large-backup.php ../.. 1024 s3-mock
+composer validate --strict --no-check-publish
+rg --files src tests database/migrations routes -g '*.php' -0 | xargs -0 -n1 php -l
+```
+
+Expected result: package loading, destination storage, access, validation,
+credential protection, migration rollback, navigation, HTTP forms, source streams, and host
+integration checks pass. The HTTP suite exercises the web middleware, including
+real CSRF checks, uploads, forbidden requests, stale forms, and secret handling.
+The standalone harness creates and removes a temporary Laravel application.
+The host check boots the actual ProjectSend providers with an in-memory SQLite
+database and temporary caches and storage. Only isolated test jobs run. Neither test
+loads ProjectSend's `.env`, accesses its database, or changes its caches.
+It runs the real host migrations against its isolated database and checks
+the real file scopes, download limits, and staff picker endpoints. It also tests
+staff review/submission/history through host HTTP middleware, real CSRF checks,
+forged IDs, requester isolation, duplicate submissions and safe progress JSON. Its S3 test
+uses the installed AWS/Flysystem adapter with a mocked AWS command handler;
+no object-store network request is made. Live S3/GCS connectivity is not tested.
+The host check also exercises real database queue dispatch and execution-time
+refusals without a network connection. Add `--sftp` to exercise queued transfers
+from local storage and the mocked S3 adapter to the local SSH server, including
+progress, accounting rollback, changed source bytes, interruption, recovery,
+and concurrent independent PHP workers. It includes a staff HTTP submission
+through to real SFTP delivery, matching bytes and one audit entry. Add `--workers-only` alongside `--sftp`
+to focus on lease takeover, stale-worker resumption, and hard-kill recovery. The `--sftp` fixture uses its own
+temporary SQLite file so those workers can share test state; the ordinary host
+check uses SQLite in memory.
+
+The database harnesses require the SQLite extension. The SFTP tests require
+OpenSSH `sshd`, `ssh-keygen`, and `sftp-server`, an ordinary non-root account,
+and permission to bind a loopback port. Python 3 is also required for the
+Windows-permission protocol relay. It generates temporary host/login keys
+and starts its own unprivileged SSH server on 127.0.0.1. It changes no account
+keys or system SSH configuration and connects to no external server. Its files
+and server are removed on normal exit. Interruption testing can take a minute
+because it exercises a real connection timeout.
+
+Both SFTP suites also exercise explicit Windows ACL policy against a loopback
+relay over real OpenSSH. The relay accepts chmod without changing permission
+bits, or rejects chmod/rename on demand. It reproduces the observed 0600 mode
+mismatch, checks strict Unix failures, publication, recovery fencing, retry,
+collision protection, and HTTP-to-worker accounting. It does not emulate NTFS
+ACLs, Windows sharing locks, or establish live Windows acceptance. See
+[Windows destinations](#windows-destinations) for the server-side checks.
+
+The Phase 9 large-backup commands require temporary space for two full copies
+plus 256 MiB. They run a separate 128 MiB PHP queue worker and report peak memory,
+elapsed time, throughput, exact-byte/hash verification, accounting, and metadata
+HTTP response size. The S3 variant uses a file-backed mock AWS response, without
+object-store network access. See [Run the repeatable large-data check](DEPLOYMENT.md#run-the-repeatable-large-data-check)
+for limits and the separate live-environment acceptance procedure.
+
+To test a separate package checkout without ProjectSend:
+
+```sh
+composer install
+composer test
+```
+
+Laravel is a development dependency for this standalone harness. Runtime
+dependencies include Laravel database, encryption, validation, and support
+components. phpseclib validates SSH private keys and supplies SFTP transport.
+The current host already has these dependencies installed.
+
+### Inspect the screens locally
+
+For staff selection, review, progress and history, start the actual-host fixture
+from this package directory:
+
+```sh
+php -S 127.0.0.1:8766 tests/workflow-preview.php
+```
+
+Open `http://127.0.0.1:8766/sftp/transfers`. It supplies synthetic staff, files
+and a generated-key dummy loopback destination. **Send backup queues a fixture
+record only; this preview runs no worker and makes no SFTP connection.** Browser
+tests simulate progress through a CSRF-protected fixture-only endpoint. Confirmed
+real SFTP delivery is exercised separately by `tests/host.php ../.. --sftp`.
+
+Use `?preview_role=admin` to inspect destination administration, or
+`?preview_role=staff` to return to ordinary staff. `?preview_role=empty` shows a
+staff account without file permission. The choice persists in a fixture cookie.
+State and generated keys live under `/tmp/projectsend-sftp-workflow-preview`,
+separate from existing configuration preview values. Set `SFTP_WORKFLOW_DIRECTORY`
+to a new temporary directory for a fresh workflow session; restarting the server
+does not clear it. Use generated test keys only. Do not deploy this test router.
+It bypasses login for local inspection and must stay bound to loopback.
+
+For destination administration without the full host workflow, start the
+configuration-only fixture:
+
+```sh
+php -S 127.0.0.1:8765 tests/preview.php
+```
+
+Open `http://127.0.0.1:8765/system/settings/sftp`. The preview supplies a synthetic
+administrator and stores test data under `/tmp/projectsend-sftp-preview`.
+Use test SSH keys only. This entry point refuses non-local requests and runs only
+under PHP's development server; do not deploy or expose it as an application.
+Stop the server with Ctrl+C. The real installation is not changed.
+
+For automated browser checks, use Node 22 or later and Firefox. In another
+terminal, create a temporary Firefox profile directory and run:
+
+```sh
+mkdir -p /tmp/projectsend-sftp-browser
+firefox --headless --no-remote --profile /tmp/projectsend-sftp-browser --remote-debugging-port=9222 about:blank
+```
+
+With both PHP preview servers and Firefox running, run:
+
+```sh
+node tests/browser.mjs ../../vendor/autoload.php
+node tests/workflow-browser.mjs
+```
+
+The browser script uses Node's native WebSocket and Firefox WebDriver BiDi.
+It installs no npm dependencies. Run the two browser scripts sequentially.
+The configuration script exercises a generated test key upload,
+create/edit/enable/disable, keyboard access, secret visibility, unsaved changes,
+validation recovery, and narrow light/dark layouts. Screenshots are written to
+`/tmp/projectsend-sftp-*.png`. The workflow script exercises search/clear,
+administrator navigation separation, review validation, native selection,
+submission, simulated progress, uncertain and failed outcomes, session/network
+failure and narrow themes. Its screenshots
+use `/tmp/projectsend-sftp-workflow-*.png`. The platform owns the native select
+popup; headless screenshots may omit that OS window. Stop Firefox after testing.
+For configuration regressions without touching saved preview values, start its
+server with `SFTP_TEST_DIRECTORY=/tmp/projectsend-sftp-config-check`.
+`SFTP_BROWSER_ORIGIN` and `SFTP_WORKFLOW_ORIGIN` can override the scripts' default
+loopback origins if using different ports.
+
+For a manual inspection, check labels, navigation, narrow layout, validation
+errors, and credential replacement. Saving does not connect to a destination.
+
 ## Verification history
 
 Entries below record what was true at the time of each implementation/check.
@@ -55,6 +209,29 @@ Historical phrases such as "for review", "next phase", "not installed" and older
 permission modes are not current instructions. Use the current state above and
 README.md/DEPLOYMENT.md for today's behavior and deployment procedure. Logs and
 screenshots under `/tmp` are temporary evidence, not guaranteed retained artifacts.
+
+### Public README review (2026-10-26)
+
+Reworked README.md for staff and administrators. Removed phase/UAT history,
+agent-document links, internal PHP API contracts, test implementation details,
+and local preview instructions. Retained installation, credentials, permissions,
+delivery limits, Windows requirements, history, recovery, and cancellation safety.
+Moved the current check and preview instructions to this handover, preserving
+commands and fixture restrictions. Updated DEPLOYMENT.md and AGENTS.md to point
+to the relocated checks. No runtime or host application changes.
+
+Verification:
+
+- `php tests/run.php ../../vendor/autoload.php`: passed. Log:
+  `/tmp/projectsend-readme-check.log`.
+- Inline Python check of local Markdown links and heading anchors in README.md,
+  DEPLOYMENT.md and AGENTS.md: passed.
+- Inline Python check that README.md excludes development-document links,
+  phase/UAT history, test paths, fixture prose and internal API references: passed.
+- `git diff --check`: passed.
+
+Documentation-only change. Network, browser and large-data suites were not rerun.
+Remaining operational acceptance is unchanged.
 
 ### Documentation reconciliation (2026-10-26)
 

@@ -9,7 +9,7 @@ repository; the parent's .git directory is empty. Development dependencies and
 frontend build tooling are absent. Do not assume that PHPUnit, Pest, Pint, or npm
 scripts work here. Never edit vendor.
 
-Run the focused checks documented in README.md. Record commands and results in
+Run the focused checks documented in HANDOVER.md. Record commands and results in
 HANDOVER.md. Do not use real backups, credentials, or remote servers in tests.
 
 In Blade connection labels, avoid `@{{` between separate interpolations: Blade

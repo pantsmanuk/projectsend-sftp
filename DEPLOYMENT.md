@@ -25,7 +25,7 @@ cancellation support; merged code alone does not establish deployment acceptance
    [Install into a development application](README.md#install-into-a-development-application).
    Deploy with the host's normal locked `composer install` procedure. Do not
    run a broad dependency update on a production release.
-5. Verify the locked release in staging with package checks from README.md,
+5. Verify the locked release in staging with the [package checks](HANDOVER.md#run-the-package-checks),
    `php artisan package:discover`, and `php artisan migrate:status`. Never serve
    `tests/preview.php` or `tests/workflow-preview.php`. No frontend build or
    package asset publishing is required.
