@@ -39,14 +39,14 @@ for measurements and DEPLOYMENT.md for the remaining operational gates.
 
 ## UAT follow-up tasks (2026-10-26)
 
-Task 1 is merged. Task 2 is implemented for review. Task 3 remains in the backlog.
+Tasks 1 and 2 are merged. Task 3 is implemented for review.
 
 1. **Task 1.** Merged: limit My transfers history to the most recent six calendar
    months, retaining older entries in the database. Apply
    the cutoff before pagination. Older queued, running, and uncertain transfers
    remain visible; older completed and failed entries remain accessible through
    their own detail URLs.
-2. **Task 2.** Implemented for review: add the operator workflow
+2. **Task 2.** Merged: add the operator workflow
    `php artisan sftp:cancel TRANSFER_UUID`,
    to resolve an unwanted failed attempt by deleting its database record and
    associated transfer filesystem artifacts. Design safe handling of queue jobs,
@@ -57,8 +57,8 @@ Task 1 is merged. Task 2 is implemented for review. Task 3 remains in the backlo
    fence removal requires stopped workers and terminated SSH sessions, confirmed
    with `--workers-stopped`. Retain only a UUID guard against form replay. New
    retries record prior attempt IDs; incomplete legacy histories refuse removal.
-3. **Task 3.** Remove navigation from transfer pages to destination administration,
-   including for users with `edit_settings`. Keep destination administration
+3. **Task 3.** Implemented for review: remove navigation from transfer pages to
+   destination administration, including for users with `edit_settings`. Keep destination administration
    accessible through its separate ProjectSend sidebar entry with existing
    permission checks. Preserve the approved destination picker for transfers.
 

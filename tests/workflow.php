@@ -59,6 +59,33 @@ foreach ([$owner, $workflowAdmin] as $other) {
         && ! str_contains($workflowHttp($other, 'GET', '/sftp/transfers')->getContent(), $id),
         'Own history and direct transfer URLs stay private even from configuration administrators');
 }
+// Transfer navigation stays separate even for configuration administrators.
+DB::beginTransaction();
+try {
+    $adminTransfer = Transfer::findOrFail($id)->replicate();
+    $adminTransfer->forceFill(['id' => (string) Str::uuid(), 'requested_by' => $workflowAdmin->id])->save();
+    foreach ([$staff, $workflowAdmin] as $actor) {
+        $ownId = $actor->id === $staff->id ? $id : $adminTransfer->id;
+        foreach (['/sftp/transfers', '/sftp/transfers/create', '/sftp/transfers/review/'.$local->id, '/sftp/transfers/'.$ownId] as $transferPath) {
+            $response = $workflowHttp($actor, 'GET', $transferPath);
+            $html = $response->getContent();
+            sourceCheck($response->getStatusCode() === 200 && ! str_contains($html, '/system/settings/sftp')
+                && str_contains($html, '>My transfers</a>') && str_contains($html, '>Send backup</a>'),
+                'Transfer navigation excludes destination administration for '.$actor->name.' at '.$transferPath);
+        }
+        $picker = $workflowHttp($actor, 'GET', '/sftp/transfers/review/'.$local->id)->getContent();
+        sourceCheck(str_contains($picker, '<select') && str_contains($picker, $adminDestination->name),
+            'Separated navigation preserves the approved destination picker for '.$actor->name);
+    }
+    sourceCheck($workflowHttp($workflowAdmin, 'GET', '/system/settings/sftp')->getStatusCode() === 200,
+        'Configuration administrators retain direct destination access');
+    $adminNavigation = new App\Modules\Platform\Navigation\Events\ResolvingNavigationLinks(isStaff: true);
+    Illuminate\Support\Facades\Event::dispatch($adminNavigation);
+    sourceCheck(in_array('/system/settings/sftp', array_column($adminNavigation->links, 'url'), true),
+        'Configuration administrators retain the separate ProjectSend destination sidebar entry');
+} finally {
+    DB::rollBack();
+}
 foreach ([null, $client, (clone $staff)->forceFill(['active' => false]), (clone $staff)->forceFill(['expires_at' => now()->subDay()])] as $denied) {
     sourceCheck(in_array($workflowHttp($denied, 'GET', '/sftp/transfers', [], $jsonHeaders)->getStatusCode(), [302, 401, 403, 419], true)
         && in_array($workflowHttp($denied, 'POST', '/sftp/transfers', $input, $jsonHeaders)->getStatusCode(), [302, 401, 403, 419], true), 'Ineligible accounts cannot read history or submit transfers');

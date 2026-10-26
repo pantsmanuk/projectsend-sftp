@@ -22,7 +22,9 @@
         <nav class="module-nav" aria-label="{{ __('SFTP navigation') }}">
             <a href="{{ route('sftp.transfers.index') }}" @if(request()->routeIs('sftp.transfers.index', 'sftp.transfers.show')) aria-current="page" @endif>{{ __('My transfers') }}</a>
             <a href="{{ route('sftp.transfers.create') }}" @if(request()->routeIs('sftp.transfers.create', 'sftp.transfers.review')) aria-current="page" @endif>{{ __('Send backup') }}</a>
-            @can('sftp.manage-destinations')<a href="{{ route('sftp.destinations.index') }}" @if(request()->routeIs('sftp.destinations.*')) aria-current="page" @endif>{{ __('Destinations') }}</a>@endcan
+            @if(request()->routeIs('sftp.destinations.*'))
+                @can('sftp.manage-destinations')<a href="{{ route('sftp.destinations.index') }}" aria-current="page">{{ __('Destinations') }}</a>@endcan
+            @endif
         </nav>
         @if(session('success'))<div class="notice success" role="status">{{ session('success') }}</div>@endif
         @yield('content')
