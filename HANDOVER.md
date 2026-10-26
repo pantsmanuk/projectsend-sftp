@@ -23,6 +23,29 @@ are unchanged.
 
 ## Verification
 
+### PR #2 review: restore full migration test schema (2026-10-26)
+
+Read CodeRabbit's "Prompt to fix review comments" and verified its one finding
+against tests/transfers.php. The full transfer-table rebuild dropped the
+cancellation column but left its UUID guard table, and the harness exited
+without checking that final schema. Roll back cancellation support before the
+full rollback, then reapply it after transfer/recovery migrations. Keep the
+independent cancellation reapply check and add a final full-schema assertion.
+Only the test sequence changed; runtime code and migrations are unchanged.
+
+Verification:
+
+- `php tests/host.php ../..` with the final assertion alone: expected exit 1,
+  reproducing missing cancellation support after the full rebuild. Log:
+  `/tmp/projectsend-cancel-migration-before.log`.
+- `php tests/host.php ../..` after the sequence fix: passed, including the new
+  final assertion and existing host/workflow/cancellation checks. Log:
+  `/tmp/projectsend-cancel-migration-host.log`.
+- `php -l tests/transfers.php`: passed. `git diff --check`: passed.
+
+No SFTP/browser rerun: only the final migration test sequence changed, using
+isolated SQLite with synthetic fixtures. Update the existing Task 2 PR #2.
+
 ### Task 2: remove unwanted failed transfers (2026-10-26)
 
 Task 1 was merged as PR #1. Fetched/pruned origin, fast-forwarded local main to
