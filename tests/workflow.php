@@ -138,6 +138,58 @@ sourceCheck(str_contains($workflowHttp($staff, 'GET', '/sftp/transfers?page=2')-
 sourceCheck($workflowHttp($staff, 'POST', '/sftp/transfers', array_replace($input, ['_request_id' => 'invalid']), $jsonHeaders)->getStatusCode() === 422
     && $workflowHttp($staff, 'GET', '/sftp/transfers/create?page=0', [], $jsonHeaders)->getStatusCode() === 422
     && $workflowHttp($staff, 'GET', '/sftp/transfers/create?q[]=invalid', [], $jsonHeaders)->getStatusCode() === 422, 'Staff routes validate request IDs and search/page boundaries');
+// Six calendar months, including month-end boundaries; unresolved work stays visible.
+$historyClock = Illuminate\Support\Carbon::parse('2026-08-31 12:00:00 UTC');
+Illuminate\Support\Carbon::setTestNow($historyClock);
+DB::beginTransaction();
+try {
+    $historyTemplate = Transfer::findOrFail($id)->getAttributes();
+    Transfer::query()->delete();
+    $cutoff = $historyClock->copy()->subMonthsNoOverflow(6);
+    $historyIds = [];
+    foreach ([
+        ['boundary', TransferStatus::Completed, $cutoff, $staff],
+        ['recent-failed', TransferStatus::Failed, $cutoff->copy()->addSecond(), $staff],
+        ['old-completed', TransferStatus::Completed, $cutoff->copy()->subSecond(), $staff],
+        ['old-failed', TransferStatus::Failed, $cutoff->copy()->subSecond(), $staff],
+        ['old-queued', TransferStatus::Queued, $cutoff->copy()->subYear(), $staff],
+        ['old-running', TransferStatus::Running, $cutoff->copy()->subYear(), $staff],
+        ['old-uncertain', TransferStatus::Uncertain, $cutoff->copy()->subYear(), $staff],
+        ['other-recent', TransferStatus::Completed, $historyClock, $owner],
+        ['other-unresolved', TransferStatus::Uncertain, $cutoff->copy()->subYear(), $owner],
+    ] as [$name, $state, $createdAt, $actor]) {
+        $copy = new Transfer($historyTemplate);
+        $copy->id = (string) Str::uuid();
+        $copy->forceFill(['file_name' => $name, 'status' => $state, 'created_at' => $createdAt,
+            'requested_by' => $actor->id])->save();
+        $historyIds[$name] = $copy->id;
+    }
+    $history = $workflowHttp($staff, 'GET', '/sftp/transfers')->getContent();
+    foreach ($historyIds as $name => $historyId) {
+        $visible = in_array($name, ['boundary', 'recent-failed', 'old-queued', 'old-running', 'old-uncertain'], true);
+        sourceCheck(str_contains($history, $historyId) === $visible, 'History cutoff and requester scope: '.$name);
+    }
+    sourceCheck(Transfer::count() === 9
+        && $workflowHttp($staff, 'GET', '/sftp/transfers/'.$historyIds['old-completed'])->getStatusCode() === 200,
+        'Hidden history remains stored and accessible through its own detail URL');
+    for ($i = 0; $i < 16; $i++) {
+        $copy = Transfer::findOrFail($historyIds['boundary'])->replicate();
+        $copy->id = (string) Str::uuid();
+        $copy->save();
+    }
+    $secondPage = $workflowHttp($staff, 'GET', '/sftp/transfers?page=2');
+    sourceCheck($secondPage->getStatusCode() === 200 && str_contains($secondPage->getContent(), 'Page 2 of 2')
+        && ! str_contains($secondPage->getContent(), $historyIds['old-completed'])
+        && ! str_contains($secondPage->getContent(), $historyIds['other-unresolved']),
+        'History cutoff applies before pagination without leaking other requesters');
+    Transfer::query()->whereNotIn('id', [$historyIds['old-completed'], $historyIds['old-failed']])->delete();
+    sourceCheck(str_contains($workflowHttp($staff, 'GET', '/sftp/transfers')->getContent(), 'No transfers yet')
+        && $workflowHttp($staff, 'GET', '/sftp/transfers?page=2')->isRedirection()
+        && Transfer::count() === 2, 'An entirely hidden history renders empty and clamps stale pages without deleting records');
+} finally {
+    DB::rollBack();
+    Illuminate\Support\Carbon::setTestNow();
+}
 $workflowHttp($staff, 'GET', '/sftp/transfers');
 $navigation = new App\Modules\Platform\Navigation\Events\ResolvingNavigationLinks(isStaff: true);
 Illuminate\Support\Facades\Event::dispatch($navigation);

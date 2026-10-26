@@ -21,6 +21,8 @@ final class TransferController
         Gate::authorize('sftp.transfer');
         $page = $request->validate(['page' => ['sometimes', 'integer', 'min:1']]);
         $transfers = Transfer::query()->where('requested_by', $request->user()->getKey())
+            ->where(fn ($query) => $query->where('created_at', '>=', now()->subMonthsNoOverflow(6))
+                ->orWhereIn('status', [TransferStatus::Queued, TransferStatus::Running, TransferStatus::Uncertain]))
             ->orderByDesc('created_at')->orderByDesc('id')->paginate(20, ['*'], 'page', (int) ($page['page'] ?? 1));
         if ($transfers->currentPage() > $transfers->lastPage()) {
             return redirect()->route('sftp.transfers.index', ['page' => $transfers->lastPage()]);

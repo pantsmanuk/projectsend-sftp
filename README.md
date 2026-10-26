@@ -547,7 +547,15 @@ any retries or reconciliation after the first start. Live timing pauses with
 status updates on errors; Refresh retrieves the current recorded duration.
 
 My transfers lists only the current requester's records, including when that
-requester is an administrator. Detail pages show bytes sent, delivery status and
+requester is an administrator. The list shows requests from the last six calendar
+months, including the exact cutoff, plus older queued, running, or uncertain
+transfers that still need attention. Completed and failed requests older than
+the cutoff are hidden from the list before pagination; their database records
+and authorised detail/status URLs remain available. Month-end cutoffs use the
+last valid day of the target month. No scheduled cleanup or database deletion is
+performed.
+
+Detail pages show bytes sent, delivery status and
 a reference for support. Pages are not cached. Active status polls every five
 seconds, pauses in hidden tabs, and stops after 180 requests, an error, a session
 change or a terminal state. **Refresh status** always works without JavaScript.
