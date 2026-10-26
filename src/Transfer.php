@@ -21,7 +21,7 @@ final class Transfer extends Model
 
     protected $hidden = [
         'source_disk', 'source_path', 'sha256', 'destination_revision', 'remote_path',
-        'attempt_id', 'execution_token', 'lease_expires_at', 'remote_identity', 'actor_snapshot',
+        'attempt_id', 'previous_attempt_ids', 'execution_token', 'lease_expires_at', 'remote_identity', 'actor_snapshot',
     ];
 
     protected function casts(): array
@@ -37,6 +37,7 @@ final class Transfer extends Model
             'finished_at' => 'datetime',
             'lease_expires_at' => 'datetime',
             'attempts' => 'integer',
+            'previous_attempt_ids' => 'array',
             'remote_identity' => 'array',
             'actor_snapshot' => 'array',
         ];

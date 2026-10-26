@@ -299,6 +299,20 @@ final class SftpTransport
      */
     public function cleanupCompleted(Destination $destination, string $attemptId, string $filename, int $bytes, string $sha256): void
     {
+        $this->cleanupMetadata($destination, $attemptId, $filename, $bytes, $sha256, false);
+    }
+
+    /** All workers and remote sessions must be terminated before removing fences. */
+    public function cleanupUnpublished(Destination $destination, string $attemptId, string $filename, int $bytes, string $sha256): void
+    {
+        if ($this->reconcile($destination, $attemptId, $filename, $bytes, $sha256, static function (): void {}) !== null) {
+            throw new SftpTransferException('This attempt published a backup. Run sftp:recover TRANSFER_UUID --retry to reconcile delivery; it cannot be cancelled.');
+        }
+        $this->cleanupMetadata($destination, $attemptId, $filename, $bytes, $sha256, true);
+    }
+
+    private function cleanupMetadata(Destination $destination, string $attemptId, string $filename, int $bytes, string $sha256, bool $unpublished): void
+    {
         $manifest = $this->manifest($attemptId, $filename, $bytes, $sha256);
         $directory = rtrim($destination->directory, '/') ?: '/';
         $name = '.projectsend-'.$attemptId.'.upload';
@@ -309,17 +323,18 @@ final class SftpTransport
             $parent = $this->entries($sftp, $directory);
             if (! isset($parent[$name])) { return; } // Already removed.
             if (($parent[$name]['type'] ?? null) !== 2) {
-                throw new SftpTransferException('The completed attempt is not a regular directory.');
+                throw new SftpTransferException('The staging attempt is not a regular directory.');
             }
             $entries = $this->entries($sftp, $root);
-            if (array_diff(array_keys($entries), ['manifest', 'writer', 'sealed']) !== []) {
-                throw new SftpTransferException('The completed attempt contains unrecognised objects.');
+            $allowed = $unpublished ? ['manifest', 'writer', 'sealed', 'unpublished'] : ['manifest', 'writer', 'sealed'];
+            if (array_diff(array_keys($entries), $allowed) !== []) {
+                throw new SftpTransferException('The staging attempt contains unrecognised objects.');
             }
             // Delete the manifest last. Its absence is safe only in an empty
             // directory left after a previously interrupted cleanup.
             if ($entries !== [] && (! isset($entries['manifest'])
                 || ! $this->matches($sftp, $root.'/manifest', $entries['manifest'], $manifest))) {
-                throw new SftpTransferException('The completed attempt identity could not be verified.');
+                throw new SftpTransferException('The staging attempt identity could not be verified.');
             }
             $files = [];
             $directories = [];
@@ -332,35 +347,43 @@ final class SftpTransport
                     continue;
                 }
                 if (($entries[$child]['type'] ?? null) !== 2) {
-                    throw new SftpTransferException('The completed attempt contains an unexpected object.');
+                    throw new SftpTransferException('The staging attempt contains an unexpected object.');
                 }
                 $contents = $this->entries($sftp, $path);
                 if (array_diff(array_keys($contents), ['ready']) !== []
                     || (isset($contents['ready']) && ! $this->matches($sftp, $path.'/ready', $contents['ready'], $manifest))) {
-                    throw new SftpTransferException('The completed attempt still contains a payload or unrecognised objects.');
+                    throw new SftpTransferException('The staging attempt still contains a payload or unrecognised objects.');
                 }
                 if (isset($contents['ready'])) { $files[] = $path.'/ready'; }
                 $directories[] = $path;
+            }
+            if ($unpublished) {
+                if (! isset($entries['unpublished']) || ! $this->matches($sftp, $root.'/unpublished', $entries['unpublished'], $manifest)) {
+                    throw new SftpTransferException('The non-publication receipt could not be verified.');
+                }
+                // Remove this receipt only after ready receipts are gone, so an
+                // interrupted cleanup cannot be mistaken for a publication.
+                $files[] = $root.'/unpublished';
             }
             // Validate the entire shape before deleting anything. Non-recursive
             // operations leave unexpected files and symlinks alone.
             foreach ($files as $path) {
                 if (! $sftp->delete($path, false)) {
-                    throw new SftpTransferException('Could not remove a completed attempt receipt.');
+                    throw new SftpTransferException('Could not remove a staging attempt receipt.');
                 }
             }
             foreach ($directories as $path) {
                 if (! $sftp->rmdir($path)) {
-                    throw new SftpTransferException('Could not remove a completed attempt directory.');
+                    throw new SftpTransferException('Could not remove a staging attempt directory.');
                 }
             }
             if ((isset($entries['manifest']) && ! $sftp->delete($root.'/manifest', false)) || ! $sftp->rmdir($root)) {
-                throw new SftpTransferException('Could not finish completed attempt cleanup.');
+                throw new SftpTransferException('Could not finish staging attempt cleanup.');
             }
         } catch (SftpTransferException $exception) {
             throw $exception;
         } catch (Throwable) {
-            throw new SftpTransferException('Completed attempt cleanup could not finish.');
+            throw new SftpTransferException('Staging attempt cleanup could not finish.');
         } finally {
             try { $sftp?->disconnect(); } catch (Throwable) {}
         }

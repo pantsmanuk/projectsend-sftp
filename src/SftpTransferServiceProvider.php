@@ -20,7 +20,7 @@ final class SftpTransferServiceProvider extends ServiceProvider
         $this->loadViewsFrom(__DIR__.'/../resources/views', 'sftp');
         $this->loadRoutesFrom(__DIR__.'/../routes/web.php');
         if ($this->app->runningInConsole()) {
-            $this->commands([RecoverTransfers::class]);
+            $this->commands([RecoverTransfers::class, CancelTransfer::class]);
         }
 
         Event::listen('App\\Modules\\Platform\\Navigation\\Events\\ResolvingNavigationLinks', function ($event): void {

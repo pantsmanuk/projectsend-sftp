@@ -42,6 +42,9 @@ final class RequestTransfer
                 if ($existing !== null) {
                     return $this->sameRequest($existing, $actor, $file->getKey(), $destinationId);
                 }
+                if (DB::table('sftp_cancelled_transfers')->where('id', $id)->lockForUpdate()->first() !== null) {
+                    throw ValidationException::withMessages(['_request_id' => __('This transfer was cancelled. Choose the backup again to start a new request.')]);
+                }
                 if (! $destination->enabled) {
                     throw new SftpTransferException('The destination is disabled.');
                 }

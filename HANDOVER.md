@@ -23,6 +23,85 @@ are unchanged.
 
 ## Verification
 
+### Task 2: remove unwanted failed transfers (2026-10-26)
+
+Task 1 was merged as PR #1. Fetched/pruned origin, fast-forwarded local main to
+`7af1b3c`, removed the merged local Task 1 branch, and created
+`feat/cancel-failed-transfers`. Task 2 is implemented for review; Task 3 remains
+pending. No host source, configuration, existing backup or real server changed.
+
+`php artisan sftp:cancel TRANSFER_UUID` synchronously removes a Failed transfer.
+Never-started failures need no destination connection. Remote cleanup requires
+`--workers-stopped`, the operator's confirmation that every SFTP worker and its
+SSH session has terminated; an expired lease alone does not prove that. Active
+leases, non-Failed states, unknown endpoint identity, unverified objects and
+incomplete legacy histories refuse removal. Reconcile interrupted/uncertain work
+first. Published attempts remain intact for recovery/accounting, not deletion.
+
+The command holds the execution row lock through cleanup and database deletion.
+It reconciles each recorded attempt and shares the existing validated,
+non-recursive metadata cleanup with Completed cleanup. Receipt deletion order
+keeps partial cleanup retryable. New retries atomically persist earlier attempt
+UUIDs before replacing the current attempt; their manifests still use the same
+recorded endpoint and source identity. Legacy single attempts are supported;
+legacy multi-attempt records with missing identities require operator investigation.
+No directory scan guesses which old barriers belong to a transfer.
+
+The additive `2026_10_26_000000_add_sftp_cancellation_support` migration adds
+`previous_attempt_ids` and the UUID-only `sftp_cancelled_transfers` table. It does
+not retain user, file, credential or endpoint details for deleted transfers.
+These UUID guards stop old forms from recreating a cancelled transfer and
+reviving delayed jobs. Broker jobs are not purged: they become harmless when the
+row is absent. Repeated cancellation succeeds using the UUID guard. Source
+backups, final backups and delivery accounting are never deleted.
+
+A queued cancellation was rejected as a design: remote fence deletion requires
+workers to be stopped. A plain row delete was rejected because it loses remote
+identities and permits request replay. The synchronous CLI plus the existing
+execution lock owns this workflow without a new queue payload or transfer state.
+
+Verification from the package directory:
+
+- `php tests/host.php ../..`: passed. Includes malformed/unknown IDs, refused
+  states and active leases, legacy history refusal, deleted destinations,
+  database rollback and safe errors, repeat cancellation, harmless delayed jobs,
+  form replay rejection, fresh submissions, and actual staff HTTP history,
+  detail/status removal and replay validation. Log:
+  `/tmp/projectsend-cancel-host.log`.
+- `php tests/host.php ../.. --sftp`: passed. Generated-key loopback tests cover
+  two unsuccessful attempts and recorded prior IDs, changed endpoint refusal
+  before connecting, unknown content/symlink refusal, all-attempt cleanup,
+  database failure after remote cleanup and safe repeat, disabled destinations,
+  unchanged source/other backups/accounting, real queued retry no-op, refusal of
+  a published attempt followed by exactly-once recovered accounting, Windows
+  partial-rmdir failure and repeat, and refusal while a real stale worker is
+  paused. Existing concurrent, hard-killed and disconnected-worker checks also
+  pass. Log: `/tmp/projectsend-cancel-host-sftp.log`.
+- `php tests/sftp.php ../../vendor/autoload.php`: passed direct transport,
+  shared Completed cleanup, receipt, collision, Unix/Windows permission-policy
+  and real-disconnect regressions. Log: `/tmp/projectsend-cancel-sftp.log`.
+- `php tests/run.php ../../vendor/autoload.php`: passed package discovery,
+  decorated-console boot and destination/credential regressions. Log:
+  `/tmp/projectsend-cancel-package.log`.
+- `php tests/http.php ../../vendor/autoload.php`: passed destination HTTP,
+  credential exclusion, CSRF, authorisation and deletion regressions. Log:
+  `/tmp/projectsend-cancel-http.log`.
+- `rg --files src tests database/migrations -g '*.php' -0 | xargs -0 -n1 php -l`:
+  all 46 files passed. Log: `/tmp/projectsend-cancel-syntax.log`.
+- `composer validate --strict --no-check-publish`: passed. Log:
+  `/tmp/projectsend-cancel-composer.log`.
+- `git diff --check`: passed. Reviewed runtime, migration, tests and docs diffs.
+
+The first sandboxed SFTP run could not bind a loopback port; both SFTP suites
+passed with approved local-port access. All checks use generated credentials,
+synthetic files and isolated SQLite/storage. No browser or large-data rerun:
+views and streaming are unchanged. Native Windows locks/ACLs and production
+SQL-engine execution remain operator acceptance checks. Stop workers and apply
+the migration before restarting; use README.md's cancellation procedure.
+Preserve guards/history on code rollback, and keep submissions disabled on old
+versions that do not check the guards. No deployment, release or tag was made.
+
+
 ### Task 1: six-month transfer history (2026-10-26)
 
 Implemented on `feat/six-month-transfer-history` for review. PLAN.md now labels

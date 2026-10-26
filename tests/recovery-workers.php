@@ -51,6 +51,9 @@ try {
     $join($recovery);
     sourceCheck($concurrent->fresh()->status === TransferStatus::Failed && $concurrentFile->downloads()->count() === 0,
         'A second process fences the stalled writer and reconciles its uncommitted partial');
+    sourceCheck(Illuminate\Support\Facades\Artisan::call('sftp:cancel', ['transfer' => $concurrent->id]) === 1
+        && is_file($sshPath.'/incoming/.projectsend-'.$concurrent->fresh()->attempt_id.'.upload/writer'),
+        'Cancellation refuses to remove barriers while a real paused stale worker can still resume');
     touch($fixturePath.'/resume-original');
     $join($first);
     sourceCheck($concurrent->fresh()->status === TransferStatus::Failed && ! file_exists($sshPath.'/incoming/concurrent-workers.dump')

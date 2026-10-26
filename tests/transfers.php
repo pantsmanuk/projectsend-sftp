@@ -202,6 +202,8 @@ $runNext();
 sourceCheck($attempt->fresh()->status === TransferStatus::Failed && $attempt->fresh()->destination_id === null
     && $attempt->fresh()->destination_name === $targetName, 'Deleted destination refuses queued work and retains its history snapshot');
 
+require __DIR__.'/cancel.php';
+
 if (in_array('--sftp', $argv, true)) {
     require __DIR__.'/queued-sftp.php';
 }
@@ -209,6 +211,15 @@ if (in_array('--sftp', $argv, true)) {
 // The migration can roll back independently without dropping host records.
 $transfersMigration = require $packagePath.'/database/migrations/2026_10_21_000001_create_sftp_transfers_table.php';
 $recoveryMigration = require $packagePath.'/database/migrations/2026_10_21_000002_add_sftp_recovery_state.php';
+$cancellationMigration = require $packagePath.'/database/migrations/2026_10_26_000000_add_sftp_cancellation_support.php';
+$beforeCancellationRollback = Transfer::count();
+$cancellationMigration->down();
+sourceCheck(Transfer::count() === $beforeCancellationRollback
+    && ! Illuminate\Support\Facades\Schema::hasTable('sftp_cancelled_transfers'),
+    'Cancellation migration rolls back without deleting transfer history');
+$cancellationMigration->up();
+sourceCheck(Illuminate\Support\Facades\Schema::hasColumn('sftp_transfers', 'previous_attempt_ids')
+    && Illuminate\Support\Facades\Schema::hasTable('sftp_cancelled_transfers'), 'Cancellation migration reapplies');
 $beforeRecoveryRollback = Transfer::count();
 $recoveryMigration->down();
 sourceCheck(Transfer::count() === $beforeRecoveryRollback, 'Recovery migration rollback preserves transfer records');
