@@ -7,8 +7,8 @@ reads the authorised file from ProjectSend storage and copies it over SFTP.
 Staff see completion or failure. The module does not restore databases.
 
 Routine destination and credential configuration belongs in administration
-screens, not `.env`. Keep the package private initially and independently
-distributable. Use module-owned screens, access rules, and transfer history.
+screens, not `.env`. Keep the package independently distributable. Its source
+repository is public. Use module-owned screens, access rules, and transfer history.
 Do not change the host file toolbar, role editor, or audit vocabulary in the
 first release. Preserve existing file access, availability, and download rules.
 
@@ -18,7 +18,14 @@ unexpired staff are eligible to use transfers; their existing file permissions
 and client-scoped library restrictions still apply. Transfer choices expose only
 enabled destination IDs and names, never connection settings or credentials.
 
-## Phases and acceptance
+## Delivery status
+
+Phases 1–8 and UAT Tasks 1–3 are implemented and merged. No UAT development task
+remains open. Phase 9's deployment guide and isolated generated-data checks are
+implemented; environment-specific deployment acceptance is still operator-run.
+Repository: https://github.com/pantsmanuk/projectsend-sftp.
+
+## Original phases and acceptance
 
 | Phase | Deliverable | Acceptance |
 | --- | --- | --- |
@@ -39,34 +46,41 @@ for measurements and DEPLOYMENT.md for the remaining operational gates.
 
 ## UAT follow-up tasks (2026-10-26)
 
-Tasks 1 and 2 are merged. Task 3 is implemented for review.
+All three tasks are merged into `main`.
 
-1. **Task 1.** Merged: limit My transfers history to the most recent six calendar
-   months, retaining older entries in the database. Apply
-   the cutoff before pagination. Older queued, running, and uncertain transfers
-   remain visible; older completed and failed entries remain accessible through
-   their own detail URLs.
-2. **Task 2.** Merged: add the operator workflow
-   `php artisan sftp:cancel TRANSFER_UUID`,
-   to resolve an unwanted failed attempt by deleting its database record and
-   associated transfer filesystem artifacts. Design safe handling of queue jobs,
-   active/stale workers, uncertain publication, and retained fencing barriers
-   before deleting anything. Cleanup must be retryable after partial failure and
-   must not delete source backups, published backups, unrelated files, or delivery
-   accounting. Refuse unsafe removal and explain the required resolution. Remote
-   fence removal requires stopped workers and terminated SSH sessions, confirmed
-   with `--workers-stopped`. Retain only a UUID guard against form replay. New
-   retries record prior attempt IDs; incomplete legacy histories refuse removal.
-3. **Task 3.** Implemented for review: remove navigation from transfer pages to
-   destination administration, including for users with `edit_settings`. Keep destination administration
-   accessible through its separate ProjectSend sidebar entry with existing
-   permission checks. Preserve the approved destination picker for transfers.
+1. **Task 1.** [PR #1](https://github.com/pantsmanuk/projectsend-sftp/pull/1):
+   My transfers shows the most recent six calendar months plus older queued,
+   running and uncertain work. Older completed/failed records stay in the database
+   and remain accessible through authorised detail/status URLs.
+2. **Task 2.** [PR #2](https://github.com/pantsmanuk/projectsend-sftp/pull/2):
+   `php artisan sftp:cancel TRANSFER_UUID` removes a failed attempt and verified
+   unpublished staging artifacts. Remote fence removal requires stopped workers
+   and terminated SSH sessions, confirmed with `--workers-stopped`. UUID guards
+   prevent form replay; incomplete legacy histories refuse removal. Source and
+   published backups, unrelated files and accounting are preserved.
+3. **Task 3.** [PR #3](https://github.com/pantsmanuk/projectsend-sftp/pull/3):
+   Transfer pages do not link to destination administration, including for
+   administrators. The separate authorised ProjectSend sidebar entry and approved
+   destination picker remain available.
+
+## Remaining operational work
+
+- Deploy the merged updates with dedicated workers stopped, apply all five
+  package migrations, then restart and smoke-test using DEPLOYMENT.md.
+- Record actual Windows ACL, database-service read, no-overwrite and recovery
+  acceptance on the chosen servers. Previous successful Windows deliveries do
+  not establish these remaining checks for every update.
+- Complete the representative staging trial with the actual storage backend,
+  production SQL engine, real staff login, agreed resource limits and checked
+  interruption/recovery. Isolated fixtures alone do not close Phase 9.
+- Prepare the owner-approved release/tag after deployment acceptance. No release,
+  registry publication, host edit or live deployment is authorised by this plan.
 
 ## Session boundaries
 
-Read this file and HANDOVER.md first. Implement the requested phase, run focused
-checks, and update the handover with exact results and the next task. Multiple
-phases may share a session when explicitly agreed; preserve each acceptance gate.
+Read this file and HANDOVER.md first. Implement only the requested task or phase.
+Run focused checks and update the handover with exact results and the next task.
+Multiple phases may share a session when explicitly agreed; preserve each acceptance gate.
 Do not expand a phase silently. Never put real credentials or customer data in
 fixtures, output, or documentation.
 

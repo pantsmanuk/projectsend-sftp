@@ -83,6 +83,7 @@ feedback. Errors preserve non-secret input and require credential re-entry.
 | Form | resources/views/field.blade.php | SaveDestination / TransferController validation | destination create/edit, transfer review | tests/http.php, tests/workflow.php and browser fixtures |
 | Select/Listbox | native | Enabled destination IDs/names | one destination, empty placeholder | tests/workflow-browser.mjs, OS popup ownership |
 | Table | resources/views/pagination.blade.php and styles.blade.php | TransferSource / requester history scope | search, paging, one Choose link per row | tests/workflow.php, tests/workflow-browser.mjs |
+| Navigation | resources/views/layout.blade.php | UX-CONTRACT.md access rules | transfer links, separate authorised destination administration | tests/workflow.php, tests/workflow-browser.mjs |
 | Progress | resources/views/scripts.blade.php | TransferController status whitelist | active, terminal, paused/session change | tests/workflow-browser.mjs |
 | Scrollbar | resources/views/styles.blade.php | Runtime CSS tokens | document, table region | narrow browser viewport |
 | Toast | resources/views/layout.blade.php | Server session status | success, inline validation error | tests/http.php |
@@ -108,6 +109,12 @@ requires no adaptation because the package has no animations.
 
 Run the HTTP flow checks, host integration checks, and browser fixture described
 in README.md. These prove behaviour; the premium audit is static evidence only.
+
+My transfers shows six calendar months of requests plus older unresolved work,
+with the filter owned by TransferController and applied before pagination.
+Operator cancellation has no staff UI control; its successful removal makes the
+record absent from history and direct detail/status access. UX-CONTRACT.md owns
+those behavior rules; README.md owns the operator commands.
 
 Staff search uses explicit GET submission, with IME composition protection. Query
 and page are URL state; Clear resets the page and returns focus to the search

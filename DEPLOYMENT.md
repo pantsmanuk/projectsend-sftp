@@ -3,7 +3,9 @@
 Use an owner-approved disposable staging installation first. This procedure
 changes the host's dependencies, database, queue configuration, and process
 supervisor. Package tests do not authorise changes to production. Keep the
-accepted Phase 8 screens and normal host file permissions.
+accepted staff screens and normal host file permissions. Phases 1–8 and all
+three UAT follow-ups are merged. This guide covers the current package, including
+cancellation support; merged code alone does not establish deployment acceptance.
 
 ## Prepare the release
 
@@ -16,9 +18,10 @@ accepted Phase 8 screens and normal host file permissions.
 3. Back up the host database, Composer files, and deployed release. Preserve
    `APP_KEY` and any previous encryption keys securely with the normal recovery
    process. Losing the key makes stored destination credentials unreadable.
-4. Build the package into the host release using a pinned private Composer
-   repository version and commit the resulting host lock file. For a disposable
-   path-based staging checkout, use the commands in
+4. Build the package into the host release using a pinned Composer repository
+   revision and commit the resulting host lock file. The source repository is
+   https://github.com/pantsmanuk/projectsend-sftp; do not deploy a floating branch.
+   For a disposable path-based staging checkout, use the commands in
    [Install into a development application](README.md#install-into-a-development-application).
    Deploy with the host's normal locked `composer install` procedure. Do not
    run a broad dependency update on a production release.
@@ -216,10 +219,21 @@ reservation policy needs a reviewed connection-selection change first.
    sidebar, select a permitted synthetic backup, and send it. Confirm completion
    and requester-only history. Confirm that staff cannot open destination
    administration and an unrelated requester cannot view the transfer URL.
+   Repeat transfer navigation as an administrator: transfer pages must not offer
+   a Destinations link. The separate sidebar entry must still open administration,
+   and approved destinations must still be selectable when sending a backup.
 6. Verify the final file's byte count and full SHA-256 on the destination and
    one host download/audit entry for the requester and transfer UUID. Verify
    the file remains absent under its final name until publication. Never
    overwrite a pre-existing final filename for a trial.
+7. Use a disposable failed attempt to verify the
+   [operator cancellation workflow](README.md#remove-an-unwanted-failed-transfer).
+   For remote artifacts, stop every SFTP worker and terminate its SSH sessions
+   before confirming `--workers-stopped`. Verify the entry disappears from
+   history/detail/status, while source/final backups and accounting stay intact.
+   Restart workers afterward. Never change timestamps or statuses in live history
+   to manufacture a test case. Six-month history boundaries are covered by the
+   isolated HTTP checks; older unresolved work remains visible.
 
 ## Run the repeatable large-data check
 

@@ -43,11 +43,16 @@ remains strict Unix permissions; no automatic fallback or banner detection.
   using it for another requester, file or destination fails. A new review is a
   new request. Navigating away guards unsaved destination selection. Busy submits
   block repeated clicks. Validation preserves selection and focuses the error.
+  Operator cancellation removes the row and retains a UUID-only replay guard;
+  old forms cannot recreate it. A fresh authorised request needs a new UUID.
 
 ## History and progress
 
 - History is newest first, 20 per page, with display-name snapshots, status and
-  request time. Server rendering escapes names. Timestamps show the user's
+  request time. Apply the inclusive six-calendar-month request-time cutoff
+  before pagination, clamping month ends. Older queued, running and uncertain
+  records remain visible. Older completed/failed records remain stored, with
+  requester-authorised detail/status access. Server rendering escapes names. Timestamps show the user's
   timezone and the application locale; transport bytes use localised sizes.
 - Detail shows a reference, safe fixed messages, and measurable bytes sent.
   100% bytes sent does not mean delivery is confirmed. Only Completed confirms
@@ -74,6 +79,17 @@ remains strict Unix permissions; no automatic fallback or banner detection.
   access/session change or a terminal state. Explain pauses and retain manual
   Refresh. BFCache restoration reloads status. No optimistic success or automatic
   upload retry. Live announcements avoid stealing focus; progress remains labelled.
+
+## Operator cancellation
+
+There is no staff web cancel or retry button. Operators can remove a Failed
+transfer with `sftp:cancel TRANSFER_UUID`. Remote staging cleanup requires all
+workers and SSH sessions to be terminated and `--workers-stopped` confirmation.
+Other states, active leases, publication evidence, unknown objects and incomplete
+legacy histories refuse removal. Successful cancellation removes history and
+returns 404 for detail/status; queued jobs for that UUID do nothing. Source and
+published backups and accounting are preserved. See the
+[operator procedure](README.md#remove-an-unwanted-failed-transfer).
 
 ## Shared behaviour and proof
 

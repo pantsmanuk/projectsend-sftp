@@ -1,6 +1,6 @@
 # ProjectSend SFTP transfers
 
-Private package for staff-initiated copies of backups from ProjectSend storage
+Package for staff-initiated copies of backups from ProjectSend storage
 to approved SFTP destinations. Backups do not pass through staff computers.
 Database restoration stays in the existing operational workflow.
 
@@ -9,10 +9,24 @@ transport, queued execution with recovery, and staff selection/progress/history
 screens. Phase 9 adds the [deployment and trial procedure](DEPLOYMENT.md) and a
 repeatable generated large-backup trial. Live deployment remains owner-operated.
 
-The provisional Composer name is `inhouse/projectsend-sftp`. The package uses
-the [BSD 3-Clause License](LICENSE), copyright 2026 GGP Systems Limited.
-Repository hosting remains to be configured; the owner must choose a public
-package name before publication.
+The Composer name is `inhouse/projectsend-sftp`. The source repository is
+[pantsmanuk/projectsend-sftp](https://github.com/pantsmanuk/projectsend-sftp)
+and is public. The package uses the [BSD 3-Clause License](LICENSE), copyright
+2026 GGP Systems Limited. Public Composer registry publication and release tags
+are separate owner decisions.
+
+All three UAT follow-ups are merged: six-month history visibility, operator
+removal of unwanted failed attempts, and separate destination-administration
+navigation. Deployment and environment acceptance remain operator-run.
+
+## Documentation
+
+- [PLAN.md](PLAN.md): delivered scope, merged tasks, and remaining acceptance work.
+- [HANDOVER.md](HANDOVER.md): current state and historical verification evidence.
+- [DEPLOYMENT.md](DEPLOYMENT.md): installation, workers, Windows ACLs, trials and rollback.
+- [UX-CONTRACT.md](UX-CONTRACT.md): staff interaction and access rules.
+- [DESIGN.md](DESIGN.md): visual conventions and shared UI ownership.
+- [AGENTS.md](AGENTS.md): package development instructions.
 
 ## Run the package checks
 
@@ -29,49 +43,7 @@ php tests/large-backup.php ../.. 256 local
 php tests/large-backup.php ../.. 1024 local
 php tests/large-backup.php ../.. 1024 s3-mock
 composer validate --strict --no-check-publish
-php -l src/SftpTransferServiceProvider.php
-php -l src/Destination.php
-php -l src/SaveDestination.php
-php -l src/SftpTransport.php
-php -l src/SftpTransferException.php
-php -l tests/sftp.php
-php -l src/TransferController.php
-php -l tests/workflow.php
-php -l tests/workflow-preview.php
-php -l tests/large-backup.php
-php -l src/Transfer.php
-php -l src/TransferStatus.php
-php -l src/RequestTransfer.php
-php -l src/TransferBackup.php
-php -l src/TransferRunner.php
-php -l src/RecoverTransfers.php
-php -l src/CancelTransfer.php
-php -l tests/cancel.php
-php -l tests/cancel-sftp.php
-php -l database/migrations/2026_10_26_000000_add_sftp_cancellation_support.php
-php -l tests/transfers.php
-php -l tests/queued-sftp.php
-php -l tests/cleanup-queued-sftp.php
-php -l tests/cleanup-sftp.php
-php -l tests/sftp-fixture.php
-php -l tests/windows-sftp.php
-php -l tests/windows-queued-sftp.php
-php -l database/migrations/2026_10_23_000000_add_windows_acl_policy_to_sftp_destinations.php
-php -l tests/host-bootstrap.php
-php -l tests/recovery-worker.php
-php -l tests/recovery-sftp.php
-php -l tests/recovery-workers.php
-php -l database/migrations/2026_10_21_000002_add_sftp_recovery_state.php
-php -l database/migrations/2026_10_21_000001_create_sftp_transfers_table.php
-php -l database/migrations/2026_10_21_000000_create_sftp_destinations_table.php
-php -l tests/run.php
-php -l tests/destinations.php
-php -l tests/host.php
-php -l src/DestinationController.php
-php -l routes/web.php
-php -l tests/http.php
-php -l tests/fixture.php
-php -l tests/preview.php
+rg --files src tests database/migrations routes -g '*.php' -0 | xargs -0 -n1 php -l
 ```
 
 Expected result: package loading, destination storage, access, validation,
@@ -131,8 +103,8 @@ composer test
 
 Laravel is a development dependency for this standalone harness. Runtime
 dependencies include Laravel database, encryption, validation, and support
-components. phpseclib validates SSH private keys in phase 2 and supplies SFTP
-transport in phase 5. The current host already has these dependencies installed.
+components. phpseclib validates SSH private keys and supplies SFTP transport.
+The current host already has these dependencies installed.
 
 ## Inspect the screens locally
 
@@ -158,8 +130,8 @@ to a new temporary directory for a fresh workflow session; restarting the server
 does not clear it. Use generated test keys only. Do not deploy this test router.
 It bypasses login for local inspection and must stay bound to loopback.
 
-The older configuration-only fixture remains available:
-
+For destination administration without the full host workflow, start the
+configuration-only fixture:
 
 ```sh
 php -S 127.0.0.1:8765 tests/preview.php
@@ -179,7 +151,7 @@ mkdir -p /tmp/projectsend-sftp-browser
 firefox --headless --no-remote --profile /tmp/projectsend-sftp-browser --remote-debugging-port=9222 about:blank
 ```
 
-With both local processes running, run:
+With both PHP preview servers and Firefox running, run:
 
 ```sh
 node tests/browser.mjs ../../vendor/autoload.php
@@ -192,8 +164,9 @@ The configuration script exercises a generated test key upload,
 create/edit/enable/disable, keyboard access, secret visibility, unsaved changes,
 validation recovery, and narrow light/dark layouts. Screenshots are written to
 `/tmp/projectsend-sftp-*.png`. The workflow script exercises search/clear,
-review validation, native selection, submission, simulated progress, uncertain
-and failed outcomes, session/network failure and narrow themes. Its screenshots
+administrator navigation separation, review validation, native selection,
+submission, simulated progress, uncertain and failed outcomes, session/network
+failure and narrow themes. Its screenshots
 use `/tmp/projectsend-sftp-workflow-*.png`. The platform owns the native select
 popup; headless screenshots may omit that OS window. Stop Firefox after testing.
 For configuration regressions without touching saved preview values, start its
@@ -233,13 +206,14 @@ discovers its provider automatically. No `.env` or `bootstrap/providers.php`
 changes are required. These commands intentionally change the development
 application's `composer.json` and lock file.
 
-The provider registers destination, transfer, and recovery-state migrations. Run the application's
-normal `php artisan migrate` step when installing this phase into a development
-checkout. Rolling back the destination migration deletes its configuration and
-credentials. Rolling back the transfer migration removes its history and pending
+The provider registers five migrations: destinations, transfers, recovery state,
+Windows ACL policy, and cancellation support. Run the application's normal
+`php artisan migrate` step when installing or upgrading the package. Rolling
+back the destination migration deletes its configuration and credentials. Rolling back the transfer migration removes its history and pending
 execution records, but does not remove remote files or host audit entries. Stop
-SFTP workers before a rollback. No migration has been run against this
-workspace's real database.
+SFTP workers before a rollback. Preserve cancellation UUID guards and previous
+attempt IDs. Keep submissions disabled on older code that does not enforce those
+guards; see [Stop or roll back](DEPLOYMENT.md#stop-or-roll-back).
 
 After installation, eligible staff see **More → SFTP transfers** in the
 ProjectSend sidebar. Staff with `edit_settings` also see **SFTP destinations**.
@@ -285,7 +259,7 @@ bind `TransferSource` as a singleton across requests or queue jobs.
 
 These backends require the actual ProjectSend host file models and services.
 The configuration-only local preview uses a synthetic identity and is not a
-fixture for the new file-selection endpoints. Run `php tests/host.php ../..` to
+fixture for the file-selection endpoints. Run `php tests/host.php ../..` to
 exercise them against the isolated real-host application.
 
 ## Backend SFTP transport
@@ -296,7 +270,7 @@ position. The caller retains ownership of the stream. It returns `path`, `bytes`
 and `sha256` after successful publication. Progress reports bytes sent, before
 publication, and does not mean a transfer has completed.
 
-The phase 6 worker calls it inside `TransferSource::withStream`, using the
+The queue worker calls it inside `TransferSource::withStream`, using the
 selected file's byte count and SHA-256 checksum. Missing or invalid checksums
 fail rather than bypass verification. The transport itself performs no database
 writes; the queued job owns progress, completion, and accounting.
@@ -387,7 +361,7 @@ database transaction. The entry explicitly names the requesting staff member
 and includes `delivery: sftp` and the transfer ID. This preserves the host's
 download counts, per-user limits, and uploader exemption without new audit
 actions. Source reads and unconfirmed uploads do not spend allowance. The host's
-existing concurrency race for download limits also applies here; this phase
+existing concurrency race for download limits also applies here; the package
 does not reserve allowance across concurrent transfers or browser downloads.
 
 Internal storage paths, checksums, destination revisions, and remote paths are
@@ -681,7 +655,7 @@ The SFTP transport checks it against the remote host key before authentication.
 ## Destination configuration contract
 
 `ProjectSendSftp\SaveDestination::save($actor, $input, $destination = null)` is
-the configuration write boundary for the phase 3 controller. It checks the
+the configuration write boundary for destination administration. It checks the
 `sftp.manage-destinations` gate before validating or writing. That gate requires
 an active, unexpired staff account with the existing `edit_settings` permission.
 Use the same gate before listing or displaying configuration.
@@ -718,6 +692,6 @@ actual application, its providers, and the real navigation hook. The separate
 HTTP suite and browser preview use a synthetic identity, not a real ProjectSend
 login. Verification results are recorded in [HANDOVER.md](HANDOVER.md).
 
-Keep this directory independently distributable. Connect this package repository
-to a separate private remote when repository hosting is arranged. See [PLAN.md](PLAN.md) for scope
-and [HANDOVER.md](HANDOVER.md) for the next task.
+Keep this directory independently distributable. See [PLAN.md](PLAN.md) for
+scope and remaining acceptance work, and [HANDOVER.md](HANDOVER.md) for current
+state and verification evidence.

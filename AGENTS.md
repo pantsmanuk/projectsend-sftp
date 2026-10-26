@@ -1,8 +1,8 @@
 # Package development
 
 This directory is the boundary of the separately distributable SFTP package.
-Read PLAN.md and HANDOVER.md before working. Complete only the requested phase.
-Keep host application changes separate and explain any required integration.
+Read PLAN.md and HANDOVER.md before working. Complete only the requested task or
+phase. Keep host application changes separate and explain any required integration.
 
 The parent application is a release installation. This package has its own Git
 repository; the parent's .git directory is empty. Development dependencies and

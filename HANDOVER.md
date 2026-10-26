@@ -1,27 +1,91 @@
 # Development handover
 
-## Current state
+## Current state (2026-10-26)
 
-Phases 1–8 are complete, and the user accepted the Phase 8 UI.
-Phase 9's deployment procedure and isolated large-backup trial are implemented.
-The user explicitly chose isolated local fixtures only for this phase's session.
-The owner has since installed the package in staging, configured a real SQL
-Server destination, and delivered a backup visible in SSMS. Restore header
-inspection prompted the 0644 publication change documented below. The owner's
-Windows OpenSSH trial then exposed synthetic Unix mode reporting: chmod succeeds
-but reports 0600. The Windows ACL compatibility follow-up below adds an explicit
-server-managed ACL setting while retaining strict Unix defaults. Deploying that
-update and verifying actual Windows ACLs, delivery, and database-service reads
-remain operator acceptance steps.
-The user confirmed manual acceptance of phase 3, including destination deletion.
-The package is at `packages/projectsend-sftp`, with its own Git repository and
-GitHub origin `https://github.com/pantsmanuk/projectsend-sftp.git`. The owner has
-confirmed deployment as a Git checkout and completed transfers to both Windows
-targets. The completed-transfer cleanup follow-up below is implemented locally;
-its verification and deployment requirements are recorded below. Host source, Composer files, caches, and `.env`
-are unchanged.
+The package has its own public repository at
+https://github.com/pantsmanuk/projectsend-sftp. The host is a release installation;
+its source, Composer files, caches and environment remain separate from this
+package's development. LICENSE is BSD-3-Clause, copyright 2026 GGP Systems Limited.
 
-## Verification
+Phases 1–8 are complete. The owner accepted the staff UI and destination deletion.
+Phase 9's deployment guide and isolated large-backup checks are implemented.
+All three UAT follow-ups are merged into `main`:
+
+| Task | Merged PR | Behavior |
+| --- | --- | --- |
+| 1 | [#1](https://github.com/pantsmanuk/projectsend-sftp/pull/1) | Six-month history cutoff, retaining older unresolved work and database records. |
+| 2 | [#2](https://github.com/pantsmanuk/projectsend-sftp/pull/2) | Checked CLI removal of failed transfers, all-attempt metadata cleanup and UUID replay guards. |
+| 3 | [#3](https://github.com/pantsmanuk/projectsend-sftp/pull/3) | No destination-administration link on transfer pages, including for administrators. |
+
+PR #2 also includes the reviewed full migration rollback/reapply test fix.
+PR #3's CodeRabbit review completed with no actionable findings. Host/package/
+HTTP and both Firefox suites passed for Task 3. Task 2 additionally passed the
+loopback SFTP, stale-worker and partial-cleanup checks recorded below.
+
+The owner previously confirmed staging installation and successful deliveries to
+both Windows targets, plus the folder-junction setup. This is not evidence that
+the latest merged changes have been deployed or that all native Windows ACL,
+sharing-lock and database-service read acceptance checks have been completed.
+Those steps and production SQL-engine/actual storage-backend trials remain
+operator-run. No customer data or real servers were used by package tests.
+
+## Next operational steps
+
+1. Deploy the merged updates with SFTP workers stopped. Apply all five package
+   migrations, including `2026_10_26_000000_add_sftp_cancellation_support`, then
+   restart workers and verify effective queue configuration and the staff/admin
+   flows. Follow [DEPLOYMENT.md](DEPLOYMENT.md).
+2. Verify successful-attempt cleanup on Linux/Windows and one unchanged delivery
+   accounting entry. Use checked recovery for leftovers. Never manually sweep
+   older barriers; failed-transfer cancellation has its own stopped-worker
+   prerequisite in [README.md](README.md#remove-an-unwanted-failed-transfer).
+3. Complete native Windows ACL/read/lock acceptance and the representative
+   staging large-backup and interruption/recovery trial with the actual backend,
+   database engine, real login and agreed resource limits. Record owner acceptance.
+4. Prepare the requested v1.0.0 release after acceptance. No deployment, registry
+   publication or release tag has been performed by this documentation update.
+
+There are no outstanding UAT development tasks. PLAN.md owns delivered scope and
+remaining operational gates; README.md and DEPLOYMENT.md own current procedures.
+
+## Verification history
+
+Entries below record what was true at the time of each implementation/check.
+Historical phrases such as "for review", "next phase", "not installed" and older
+permission modes are not current instructions. Use the current state above and
+README.md/DEPLOYMENT.md for today's behavior and deployment procedure. Logs and
+screenshots under `/tmp` are temporary evidence, not guaranteed retained artifacts.
+
+### Documentation reconciliation (2026-10-26)
+
+Reviewed all tracked documentation against merged code and GitHub repository
+metadata. Tasks 1–3 are merged, the source repository is public, and only
+operator deployment/acceptance/release work remains. Updated PLAN.md and this
+current-state summary, repository/install/check instructions in README.md,
+deployment smoke checks, and the history/cancellation rules in UX-CONTRACT.md
+and DESIGN.md. AGENTS.md now scopes work to the requested task or phase.
+
+Removed the redundant historical "Next task" section and replaced the repeated
+per-file syntax command list with one command covering all PHP sources, tests,
+migrations and routes. Kept every documentation file: each owns distinct
+instructions, contracts, scope or unique verification evidence. Retained
+historical test notes with an explicit boundary between history and current
+instructions. LICENSE and the UI metadata remain applicable and unchanged.
+
+Verification:
+
+- `python3 /tmp/projectsend-docs-check.py`: passed all local Markdown links and
+  anchors, README test script paths and the five-migration inventory.
+- `php tests/run.php ../../vendor/autoload.php`: passed. Log:
+  `/tmp/projectsend-docs-package.log`.
+- `rg --files src tests database/migrations routes -g '*.php' -0 | xargs -0 -n1 php -l`:
+  passed the consolidated README syntax command. Log:
+  `/tmp/projectsend-docs-syntax.log`.
+- `git diff --check`: passed. Reviewed documentation diff and current procedures
+  against TransferController, CancelTransfer, TransferBackup and merged PRs 1–3.
+
+Documentation only; no runtime or host changes. Network/SFTP/browser/large-data
+suites were not repeated. Operational acceptance remains as listed above.
 
 ### Task 3: separate transfer navigation (2026-10-26)
 
@@ -636,7 +700,7 @@ The full real-host login-to-navigation-to-settings flow has not been browser
 tested. Host navigation is checked with real user models; HTTP/browser tests use
 a separate fixture with a synthetic identity. No frontend rebuild is required.
 
-## Phase 2 implementation
+### Phase 2 implementation
 
 - `Destination` owns `sftp_destinations`; secrets use encrypted casts and hidden
   attributes. Presence flags support future forms without returning secrets.
@@ -647,25 +711,7 @@ a separate fixture with a synthetic identity. No frontend rebuild is required.
 - phpseclib became an explicit dependency in phase 2 to validate keys rather than
   accepting unusable credentials until phase 5. Installed 3.0.56 supplies it here.
 
-## Next task
-
-Deploy the completed-transfer cleanup update with dedicated SFTP workers stopped,
-then restart the workers. No migrations, credential/settings changes, or frontend
-build are needed for this follow-up. Verify a newly Completed transfer removes
-its successful attempt directory on Linux and Windows, preserving the final
-backup and one accounting entry. Use `sftp:recover TRANSFER_UUID` to retry a
-completed record's leftover cleanup if needed; it never re-uploads that record.
-Do not sweep older abandoned-attempt barriers. After deployment acceptance,
-prepare the requested v1.0.0 release. Automated checks remain fixture-only.
-Production deployment and native Windows ACL/sharing-lock acceptance are
-operator-run. Do not deploy or create a release tag automatically.
-
-Staff recovery remains administrator-operated through `sftp:recover`; phase 8
-adds no staff web retry. Configuration requires `edit_settings`; all eligible
-staff may transfer only files already permitted to them. History and detail/status
-are strictly requester-only, even for administrators. No cross-user history UI.
-
-## Phase 9 implementation and verification
+### Phase 9 implementation and verification
 
 - Added DEPLOYMENT.md with release preparation, locked Composer integration,
   migrations, shared queue topology, effective reservation/visibility settings,
@@ -722,7 +768,7 @@ are strictly requester-only, even for administrators. No cross-user history UI.
   live object-store connection, or representative production-size trial was run.
   Those gates remain in DEPLOYMENT.md for the owner's chosen environment.
 
-## Phase 8 implementation and verification
+### Phase 8 implementation and verification
 
 - Added package-owned Blade staff search/selection, review with native approved
   destination selection, explicit send, progress detail and paginated own history.
@@ -804,7 +850,7 @@ are strictly requester-only, even for administrators. No cross-user history UI.
   MySQL/PostgreSQL concurrent sessions, live object storage and representative
   large-file performance remain untested. Phase 9 retains deployment/trial scope.
 
-## Phase 7 implementation and verification
+### Phase 7 implementation and verification
 
 - Recovery columns store the remote endpoint identity, individual attempt UUID,
   attempt count, execution token, lease deadline, and actor snapshot. These
@@ -880,7 +926,7 @@ are strictly requester-only, even for administrators. No cross-user history UI.
   live object-store connectivity, and large-backup performance remain untested.
   The existing host download-limit concurrency race is unchanged.
 
-## Phase 6 implementation and verification
+### Phase 6 implementation and verification
 
 - `sftp_transfers` stores a UUID per attempt, source identity, destination
   revision, display-name snapshots, status, progress, timestamps, safe errors,
@@ -950,7 +996,7 @@ The host's 90-second database retry_after is insufficient. No live worker was
 started or configured. Phase 7 now supplies recovery; use README.md's commands to reproduce the
 current isolated checks. Deployment remains phase 9.
 
-## Phase 5 implementation and verification
+### Phase 5 implementation and verification
 
 - `SftpTransport` uses installed phpseclib 3.0.56. It verifies the host's SHA-256
   fingerprint before decrypting credentials or authenticating. It supports pins
@@ -993,7 +1039,7 @@ current isolated checks. Deployment remains phase 9.
   Phase 7 must reconcile uncertain publication and orphan staging before retries
   and handle worker crashes and duplicate jobs without duplicate accounting.
 
-## Phase 4 implementation and verification
+### Phase 4 implementation and verification
 
 - The user requires separate administration and transfer surfaces. Configuration
   still needs `edit_settings`; new `sftp.transfer` allows all active, unexpired
@@ -1025,7 +1071,7 @@ current isolated checks. Deployment remains phase 9.
   validation and PHP syntax checks. No dependency downloads, host edits, or real
   database changes were required.
 
-## Phase 3 implementation
+### Phase 3 implementation
 
 Deletion was added to phase 3 at the user's request. Edit pages link to a
 separate confirmation page naming the destination and focusing Keep destination.
@@ -1058,7 +1104,7 @@ escaped value; HTTP/browser regression checks cover the displayed hostname.
   authentication and generated test data only. It must never be a production
   entry point. README.md contains the browser and manual inspection procedure.
 
-## Workspace facts
+### Workspace facts
 
 This is a release installation with PHP 8.4.1, Composer 2.8.12, Laravel 12, and
 production dependencies under the parent application's `vendor/`. The package
